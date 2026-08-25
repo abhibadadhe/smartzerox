@@ -1,0 +1,46 @@
+# Node modules
+**/node_modules/
+
+# Local environment files
+**/.env
+**/.env.*
+
+# Build output
+**/dist/
+**/build/
+
+# Logs
+**/*.log
+logs/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE / editor files
+.vscode/
+*.code-workspace
+
+# npm package locks if you don’t want them tracked at root
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Misc
+.cache/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# Electron build artifacts
+**/out/
+
+# Generated coverage reports
+coverage/
+
+# Ignore local generated files
+*.local
+
+*.zip
+frontend/public/downloads/

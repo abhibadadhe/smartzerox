@@ -1,0 +1,235 @@
+═══════════════════════════════════════════════════════════
+   🖨️  QUICK PRINTER CONNECTION GUIDE
+   Connect Printers to Deployed System in 3 Steps
+═══════════════════════════════════════════════════════════
+
+📋 PREREQUISITES:
+   ✅ Backend deployed: https://your-backend.render.com
+   ✅ Frontend deployed: https://your-frontend.vercel.app
+   ✅ Shopkeeper account created and logged in
+
+═══════════════════════════════════════════════════════════
+
+🚀 METHOD 1: MANUAL SETUP (RECOMMENDED)
+   ★ Easiest for most users
+
+   STEP 1: Find Printer IP Address
+   ─────────────────────────────────
+   Windows:
+   > ping PRINTER_NAME
+   
+   macOS:
+   $ system_profiler SPPrintersDataType | grep "Print Server"
+   
+   Linux:
+   $ lpstat -v
+   
+   Example: 192.168.1.100
+
+   STEP 2: Test Connection
+   ────────────────────────
+   Windows PowerShell:
+   > Test-NetConnection -ComputerName 192.168.1.100 -Port 631
+   
+   macOS/Linux:
+   $ nc -zv 192.168.1.100 631
+   
+   Expected: "Connection succeeded"
+
+   STEP 3: Add Printer via Dashboard
+   ──────────────────────────────────
+   1. Login to: https://your-frontend.vercel.app/login
+   2. Go to: Shop Dashboard → Printers
+   3. Click: "Add Manual Printer" or "+ Add Printer"
+   4. Fill form:
+      • Printer Name: HP LaserJet Pro
+      • Type: bw (Black & White) or color
+      • IP Address: 192.168.1.100
+   5. Click: "Save" or "Add Printer"
+   6. Verify: Status shows "Running" ✅
+
+   DONE! Your printer is connected ✨
+
+═══════════════════════════════════════════════════════════
+
+🔧 METHOD 2: API SETUP (For developers)
+
+   GET YOUR AUTH TOKEN:
+   ────────────────────
+   1. Login to frontend
+   2. Open Browser DevTools (F12)
+   3. Go to: Application → Local Storage
+   4. Copy value of "token" key
+
+   ADD PRINTER VIA API:
+   ────────────────────
+   curl -X POST "https://your-backend.render.com/api/printers/manual" \
+     -H "Content-Type: application/json" \
+     -H "Authorization: Bearer YOUR_TOKEN_HERE" \
+     -d '{
+       "name": "HP LaserJet Pro",
+       "type": "bw",
+       "ipAddress": "192.168.1.100"
+     }'
+
+   Expected Response:
+   {
+     "success": true,
+     "message": "Printer added successfully"
+   }
+
+═══════════════════════════════════════════════════════════
+
+🌐 METHOD 3: REMOTE ACCESS (For printers not on same network)
+
+   OPTION A: Port Forwarding (Simple but less secure)
+   ──────────────────────────────────────────────────
+   1. Login to router (usually 192.168.1.1)
+   2. Find "Port Forwarding" settings
+   3. Add rule:
+      • External Port: 631
+      • Internal IP: 192.168.1.100 (printer IP)
+      • Internal Port: 631
+      • Protocol: TCP
+   4. Get your public IP:
+      curl ifconfig.me
+   5. Add printer with public IP:
+      IP Address: YOUR_PUBLIC_IP:631
+   
+   ⚠️  Security: Exposes printer to internet!
+
+   OPTION B: VPN (Secure - Recommended for Production)
+   ───────────────────────────────────────────────────
+   Using Tailscale (easiest):
+   
+   1. Install on backend server:
+      curl -fsSL https://tailscale.com/install.sh | sh
+      sudo tailscale up
+   
+   2. Install on printer's network:
+      curl -fsSL https://tailscale.com/install.sh | sh
+      sudo tailscale up --advertise-routes=192.168.1.0/24
+   
+   3. Accept routes in Tailscale admin
+   
+   4. Add printer using local IP:
+      IP Address: 192.168.1.100
+   
+   ✅ Backend can now access local printer securely!
+
+═══════════════════════════════════════════════════════════
+
+✅ VERIFICATION CHECKLIST
+
+   After adding printer, verify:
+   
+   □ Printer appears in dashboard printer list
+   □ Status shows "Running" (not "Offline")
+   □ Last Seen timestamp is recent (< 5 mins)
+   □ Place test order as customer
+   □ Accept order as shopkeeper
+   □ Order status changes: Printing → Ready
+   □ Physical printout received ✨
+
+═══════════════════════════════════════════════════════════
+
+❓ TROUBLESHOOTING
+
+   ISSUE: Printer shows "Offline"
+   ───────────────────────────────
+   → Check printer is powered on
+   → Verify IP address: ping 192.168.1.100
+   → Test port 631: nc -zv 192.168.1.100 631
+   → Check network connectivity
+   → Verify firewall allows port 631
+
+   ISSUE: "IPP Request Timeout"
+   ────────────────────────────
+   → Increase timeout in backend .env:
+     IPP_REQUEST_TIMEOUT_MS=30000
+   → Check network latency: ping 192.168.1.100
+   → Verify printer supports IPP protocol
+
+   ISSUE: "No Printer Available"
+   ──────────────────────────────
+   → Check printer is enabled in dashboard
+   → Verify printer type matches order:
+     • Color order needs color printer
+     • B&W order can use B&W printer only
+   → Refresh printer list in dashboard
+
+   ISSUE: Print job stuck
+   ──────────────────────
+   → Check printer for paper jam
+   → Clear printer queue
+   → Click "Resume Print" in order details
+   → Check backend logs for errors
+
+═══════════════════════════════════════════════════════════
+
+📊 COMMON PRINTER BRANDS & IPP SUPPORT
+
+   ✅ HP           - Full support (port 631)
+   ✅ Canon        - Full support (enable "Network Printing")
+   ✅ Epson        - Full support (enable "IPP Printing")
+   ✅ Brother      - Full support on network models
+   ✅ Xerox        - Full support on commercial models
+   ⚠️  Samsung     - Limited on older models
+   ✅ Lexmark      - Full support on enterprise models
+
+   To enable IPP:
+   1. Open: http://PRINTER_IP (printer web interface)
+   2. Go to: Network Settings → Protocols
+   3. Enable: IPP or Internet Printing Protocol
+   4. Save and restart printer
+
+═══════════════════════════════════════════════════════════
+
+🔐 SECURITY BEST PRACTICES
+
+   1. Use DHCP Reservation for printer (fixed IP)
+   2. Whitelist backend server IP in firewall
+   3. Use VPN (Tailscale) for production
+   4. Never expose printer directly to internet
+   5. Use HTTPS/TLS if printer supports IPPS
+   6. Regularly update printer firmware
+
+═══════════════════════════════════════════════════════════
+
+📚 API ENDPOINTS REFERENCE
+
+   Add Printer:
+   POST /api/printers/manual
+   Body: { name, type, ipAddress }
+
+   Get Printers:
+   GET /api/printers/my-shop
+
+   Update IP:
+   PATCH /api/printers/:id/ip
+   Body: { ipAddress }
+
+   Toggle Enable:
+   PATCH /api/printers/:id/toggle
+   Body: { isEnabled: true/false }
+
+   Update Name:
+   PATCH /api/printers/:id/display-name
+   Body: { displayName }
+
+   All require:
+   Header: Authorization: Bearer <token>
+
+═══════════════════════════════════════════════════════════
+
+📞 NEED HELP?
+
+   Full Guide: See PRINTER_CONNECTION_GUIDE.md
+   Backend Logs: Check backend/logs/ for detailed errors
+   Test IPP: ipptool -tv ipp://IP:631/ipp/print get-printer-attributes.test
+
+═══════════════════════════════════════════════════════════
+
+Generated: 2026-07-12
+System: Xerox-Agent IPP-based Printing Platform
+Status: ✅ Production Ready
