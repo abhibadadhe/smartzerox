@@ -1,0 +1,8 @@
+nodenode_modules/
+.env
+/dist
+
+*.zip
+frontend/public/downloads/
+
+node_modules
