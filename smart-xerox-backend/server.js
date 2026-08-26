@@ -124,9 +124,20 @@ app.use(securityMiddleware.isHoneypotIp);            // Block known bad actors
 app.use(securityMiddleware.geoBlock);                // Geographic restrictions
 
 // ─── CORS ────────────────────────────────────────────────────────────────────
-const allowedOrigins = process.env.NODE_ENV === 'production'
-  ? [process.env.FRONTEND_URL].filter(Boolean)
-  : [process.env.FRONTEND_URL, 'http://localhost:3000', 'http://localhost:5173', 'http://127.0.0.1:3000', 'http://127.0.0.1:5173'].filter(Boolean);
+const rawFrontendUrls = (process.env.FRONTEND_URL || '')
+  .split(',')
+  .map(u => u.trim().replace(/\/$/, ''))
+  .filter(Boolean);
+
+const allowedOrigins = new Set([
+  ...rawFrontendUrls,
+  'https://pratibimb.online',
+  'https://www.pratibimb.online',
+  'http://localhost:3000',
+  'http://localhost:5173',
+  'http://127.0.0.1:3000',
+  'http://127.0.0.1:5173'
+]);
 
 const corsOptions = {
   credentials: true,
@@ -168,7 +179,12 @@ app.use((req, res, next) => {
     }
 
     // Whitelist check
-    if (allowedOrigins.includes(origin)) {
+    if (
+      allowedOrigins.has(origin) ||
+      origin === 'https://pratibimb.online' ||
+      origin === 'https://www.pratibimb.online' ||
+      origin.endsWith('.pratibimb.online')
+    ) {
       return callback(null, true);
     }
 
