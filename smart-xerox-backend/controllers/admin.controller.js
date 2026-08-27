@@ -525,3 +525,137 @@ exports.getAllWithdrawals = asyncHandler(async (req, res) => {
     },
   });
 });
+
+// @desc    Update Shop Razorpay Linked Account & Split Payment Settings
+// @route   PUT /api/admin/shops/:id/razorpay-account
+// @access  Private (Admin)
+exports.updateShopRazorpayAccount = asyncHandler(async (req, res) => {
+  const { razorpayAccountId, commissionPercentage, splitPaymentEnabled } = req.body;
+
+  const updateData = {};
+  if (razorpayAccountId !== undefined) updateData.razorpayAccountId = razorpayAccountId ? razorpayAccountId.trim() : null;
+  if (commissionPercentage !== undefined) updateData.commissionPercentage = Math.max(0, Math.min(100, Number(commissionPercentage) || 0));
+  if (splitPaymentEnabled !== undefined) updateData.splitPaymentEnabled = Boolean(splitPaymentEnabled);
+
+  const shop = await Shop.findByIdAndUpdate(req.params.id, updateData, { new: true, runValidators: true });
+  if (!shop) throw new AppError('Shop not found', 404);
+
+  logger.info(`Admin updated Razorpay Route settings for shop ${shop.name} (${shop._id}): account=${shop.razorpayAccountId}, commission=${shop.commissionPercentage}%, split=${shop.splitPaymentEnabled}`);
+
+  res.status(200).json({
+    success: true,
+    message: `Updated Razorpay Route settings for ${shop.name}`,
+    data: {
+      shopId: shop._id,
+      razorpayAccountId: shop.razorpayAccountId,
+      commissionPercentage: shop.commissionPercentage,
+      splitPaymentEnabled: shop.splitPaymentEnabled
+    }
+  });
+});
+
+// @desc    Admin create new shop & shopkeeper account for direct handover
+// @route   POST /api/admin/shops/create-with-credentials
+// @access  Private (Admin)
+exports.createShopWithCredentials = asyncHandler(async (req, res) => {
+  const {
+    shopName,
+    ownerName,
+    email,
+    phone,
+    password,
+    street,
+    city,
+    state,
+    pincode,
+    razorpayAccountId,
+    bwSingleSided,
+    bwDoubleSided,
+    colorSingleSided,
+    colorDoubleSided
+  } = req.body;
+
+  if (!shopName || !ownerName || !email || !phone || !password) {
+    throw new AppError('Shop name, owner name, email, phone, and password are required', 400);
+  }
+
+  const bcrypt = require('bcryptjs');
+
+  // Check or create User
+  let user = await User.findOne({ email: email.toLowerCase() });
+  if (user) {
+    if (user.role === 'user') {
+      user.role = 'shopkeeper';
+      await user.save();
+    }
+  } else {
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
+    user = await User.create({
+      name: ownerName,
+      email: email.toLowerCase(),
+      phone,
+      password: hashedPassword,
+      role: 'shopkeeper',
+      isVerified: true
+    });
+  }
+
+  // Create Shop
+  const shop = await Shop.create({
+    name: shopName,
+    owner: user._id,
+    phone,
+    email: email.toLowerCase(),
+    address: {
+      street: street || 'Main Street',
+      city: city || 'Pune',
+      state: state || 'Maharashtra',
+      pincode: pincode || '411001'
+    },
+    location: {
+      type: 'Point',
+      coordinates: [73.8567, 18.5204]
+    },
+    pricing: {
+      bw: {
+        singleSided: Number(bwSingleSided) || 2,
+        doubleSided: Number(bwDoubleSided) || 3
+      },
+      color: {
+        singleSided: Number(colorSingleSided) || 10,
+        doubleSided: Number(colorDoubleSided) || 15
+      }
+    },
+    razorpayAccountId: razorpayAccountId ? razorpayAccountId.trim() : null,
+    splitPaymentEnabled: Boolean(razorpayAccountId),
+    isApproved: true,
+    isVerified: true,
+    isActive: true,
+    isOpen: true
+  });
+
+  user.shopId = shop._id;
+  await user.save();
+
+  logger.info(`Admin created shop "${shop.name}" with shopkeeper account ${user.email}`);
+
+  res.status(201).json({
+    success: true,
+    message: `Shop "${shop.name}" created successfully!`,
+    data: {
+      shop: {
+        id: shop._id,
+        name: shop.name,
+        phone: shop.phone,
+        email: shop.email
+      },
+      credentials: {
+        ownerName: user.name,
+        email: user.email,
+        password: password,
+        loginUrl: 'https://pratibimb.online/login'
+      }
+    }
+  });
+});

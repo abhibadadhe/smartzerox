@@ -6,7 +6,7 @@ const razorpay = new Razorpay({
   key_secret: process.env.RAZORPAY_KEY_SECRET,
 });
 
-const createRazorpayOrder = async ({ amount, currency = 'INR', receipt, notes = {} }) => {
+const createRazorpayOrder = async ({ amount, currency = 'INR', receipt, notes = {}, transfers = [] }) => {
   // Razorpay minimum is ₹1 (100 paise)
   const amountInPaise = Math.max(Math.round(amount * 100), 100);
   try {

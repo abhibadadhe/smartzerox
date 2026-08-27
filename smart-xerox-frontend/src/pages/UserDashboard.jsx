@@ -661,54 +661,75 @@ const UserDashboard = () => {
   };
 
   // Calculate frontend cost estimate across all documents
-  const estimatedCost = () => {
+      const estimatedCost = () => {
     let cost = 0;
-    documents.forEach(doc => {
+    documents.forEach((doc) => {
       if (doc.simpleMode === 'customize') {
-        const colorResult = parsePageRange(doc.colorPages, doc.pageCount || 1);
-        const bwResult = parsePageRange(doc.bwPages, doc.pageCount || 1);
-
-        const colorCount = colorResult.pages.length;
-        const bwCount = bwResult.pages.length;
-
-        const colorCopies = doc.colorCopies === '' || doc.colorCopies === undefined ? 1 : Math.max(1, Number(doc.colorCopies) || 1);
-        const bwCopies = doc.bwCopies === '' || doc.bwCopies === undefined ? 1 : Math.max(1, Number(doc.bwCopies) || 1);
-
-        const colorSheets = doc.colorSides === 'double' ? Math.ceil(colorCount / 2) : colorCount;
-        const bwSheets = doc.bwSides === 'double' ? Math.ceil(bwCount / 2) : bwCount;
-
-        const colorRate = shopInfo?.pricing?.colorPerSheet ?? 5;
-        const bwRate = shopInfo?.pricing?.bwPerSheet ?? 1;
-
-        if (colorCount > 0) {
-          cost += colorSheets * colorRate * colorCopies;
-        }
-        if (bwCount > 0) {
-          cost += bwSheets * bwRate * bwCopies;
+        // Real-time calculation for Customize Pages mode
+        if (doc.colorPages && doc.colorPages.trim()) {
+          const colorResult = parsePageRange(doc.colorPages, doc.pageCount || 9999);
+          const colorCount = colorResult.pages.length;
+          if (colorCount > 0) {
+            const colorCopies = doc.colorCopies === '' || doc.colorCopies === undefined ? 1 : Math.max(1, Number(doc.colorCopies) || 1);
+            const isDouble = doc.colorSides === 'double';
+            const colorSheets = isDouble ? Math.ceil(colorCount / 2) : colorCount;
+            const sideKey = isDouble ? 'doubleSided' : 'singleSided';
+            const colorRate = shopInfo?.pricing?.color?.[sideKey] ?? shopInfo?.pricing?.colorPerSheet ?? (isDouble ? 15 : 10);
+            cost += colorRate * colorSheets * colorCopies;
+          }
         }
 
-        if (doc.imageOptions?.isImageFile && doc.imageOptions.paperType === 'glossy') {
-          const glossyRate = shopInfo?.pricing?.glossyPaperPerSheet ?? 15;
-          cost += glossyRate * (colorSheets + bwSheets);
+        if (doc.bwPages && doc.bwPages.trim()) {
+          const bwResult = parsePageRange(doc.bwPages, doc.pageCount || 9999);
+          const bwCount = bwResult.pages.length;
+          if (bwCount > 0) {
+            const bwCopies = doc.bwCopies === '' || doc.bwCopies === undefined ? 1 : Math.max(1, Number(doc.bwCopies) || 1);
+            const isDouble = doc.bwSides === 'double';
+            const bwSheets = isDouble ? Math.ceil(bwCount / 2) : bwCount;
+            const sideKey = isDouble ? 'doubleSided' : 'singleSided';
+            const bwRate = shopInfo?.pricing?.bw?.[sideKey] ?? shopInfo?.pricing?.bwPerSheet ?? (isDouble ? 3 : 2);
+            cost += bwRate * bwSheets * bwCopies;
+          }
         }
       } else {
-        const docCopies = doc.simpleCopies === '' || doc.simpleCopies === undefined ? 1 : Math.max(1, Number(doc.simpleCopies) || 1);
-        const docSides = doc.simpleSides ?? 'single';
-        const isColor = doc.simpleMode === 'all-color';
-        const totalPages = doc.pageCount || 1;
+        // Standard / All Pages mode
+        const configs = doc.configs && doc.configs.length > 0 ? doc.configs : [{
+          rangeStart: 1,
+          rangeEnd: doc.pageCount || 1,
+          copies: doc.simpleCopies || 1,
+          colorMode: doc.simpleMode === 'all-color' ? 'color' : 'bw',
+          sides: doc.simpleSides || 'single',
+          pagesPerSheet: 1
+        }];
 
-        const effectiveSheets = docSides === 'double' ? Math.ceil(totalPages / 2) : totalPages;
-        const rate = isColor ? (shopInfo?.pricing?.colorPerSheet ?? 5) : (shopInfo?.pricing?.bwPerSheet ?? 1);
-        cost += rate * effectiveSheets * docCopies;
+        configs.forEach((cfg) => {
+          const start = Number(cfg.rangeStart) || 1;
+          const end = Number(cfg.rangeEnd) || doc.pageCount || 1;
+          const pagesInRange = Math.max(1, end - start + 1);
+          const pps = Number(cfg.pagesPerSheet) || 1;
+          const physicalSidesNeeded = Math.ceil(pagesInRange / pps);
 
-        if (doc.imageOptions?.isImageFile && doc.imageOptions.paperType === 'glossy') {
-          const glossyRate = shopInfo?.pricing?.glossyPaperPerSheet ?? 15;
-          cost += glossyRate * effectiveSheets * docCopies;
-        }
+          const isDouble = cfg.sides === 'double';
+          const effectiveSheets = isDouble ? Math.ceil(physicalSidesNeeded / 2) : physicalSidesNeeded;
+          const copies = Number(cfg.copies) || 1;
+
+          const colorMode = cfg.colorMode === 'color' ? 'color' : 'bw';
+          const sideKey = isDouble ? 'doubleSided' : 'singleSided';
+
+          const shopPricing = shopInfo?.pricing || {};
+          const colorPricing = shopPricing[colorMode] || shopPricing['bw'] || {};
+          const fallbackRate = colorMode === 'color' ? (isDouble ? 15 : 10) : (isDouble ? 3 : 2);
+          const basePrice = colorPricing[sideKey] ?? fallbackRate;
+
+          cost += basePrice * effectiveSheets * copies;
+        });
       }
-      if (doc.spiralBinding) cost += 30;
+
+      if (doc.spiralBinding) cost += (shopInfo?.pricing?.bindingPerDocument || 30);
       if (doc.blackbook) cost += 50;
     });
+
+    // Customer pays exact base total (no extra fees added on top)
     return cost.toFixed(2);
   };
 

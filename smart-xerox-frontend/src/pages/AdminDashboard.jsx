@@ -88,7 +88,26 @@ const AdminDashboard = () => {
   const [orderTo, setOrderTo]         = useState('');
 
   // Shops tab
-  const [rejectModal, setRejectModal] = useState(null); // { id, name }
+  const [rejectModal, setRejectModal] = useState(null);
+  const [createShopModal, setCreateShopModal] = useState(false);
+  const [createdCredentials, setCreatedCredentials] = useState(null);
+  const [shopFormData, setShopFormData] = useState({
+    shopName: '',
+    ownerName: '',
+    email: '',
+    phone: '',
+    password: '',
+    street: '',
+    city: 'Pune',
+    state: 'Maharashtra',
+    pincode: '411001',
+    razorpayAccountId: '',
+    bwSingleSided: 2,
+    bwDoubleSided: 3,
+    colorSingleSided: 10,
+    colorDoubleSided: 15
+  });
+  const [creatingShop, setCreatingShop] = useState(false); // { id, name }
   const [rejectReason, setRejectReason] = useState('');
 
   // Revenue tab
@@ -247,6 +266,25 @@ const AdminDashboard = () => {
   };
 
   // ── Reject shop ──────────────────────────────────────────────────────────────
+  const handleCreateShopWithCredentials = async (e) => {
+    e.preventDefault();
+    if (!shopFormData.shopName || !shopFormData.ownerName || !shopFormData.email || !shopFormData.phone || !shopFormData.password) {
+      toast.error('Please fill in all required fields (Shop Name, Owner Name, Email, Phone, Password)');
+      return;
+    }
+    setCreatingShop(true);
+    try {
+      const res = await adminAPI.createShopWithCredentials(shopFormData);
+      toast.success(res.data.message || 'Shop created successfully!');
+      setCreatedCredentials(res.data.data.credentials);
+      fetchShops();
+    } catch (err) {
+      toast.error(err.response?.data?.message || err.message || 'Failed to create shop');
+    } finally {
+      setCreatingShop(false);
+    }
+  };
+
   const handleRejectShop = async () => {
     if (!rejectReason.trim()) { toast.error('Please enter a reason'); return; }
     try {
@@ -739,6 +777,21 @@ const AdminDashboard = () => {
         {/* ── SHOPS ── */}
         {activeTab === 'shops' && (
           <div className="space-y-4">
+            {/* ── HEADER ACTION BAR WITH ADD SHOP BUTTON ── */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 glass-card p-5 rounded-2xl border-2 border-orange-200/80 bg-gradient-to-r from-orange-50/70 via-background to-amber-50/50 shadow-md mb-4">
+              <div>
+                <h3 className="font-heading font-bold text-lg text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                  🏬 Xerox Shops Directory
+                </h3>
+                <p className="text-xs text-muted-foreground mt-0.5">Manage existing xerox shops & onboard new shopkeeper accounts directly</p>
+              </div>
+              <Button 
+                onClick={() => { setCreatedCredentials(null); setCreateShopModal(true); }} 
+                className="sunrise-gradient text-white font-bold text-sm px-5 py-2.5 rounded-xl shadow-lg shadow-orange-500/20 hover:scale-105 transition-all shrink-0"
+              >
+                + Add Shop & Handover Credentials
+              </Button>
+            </div>
             {shops.length === 0 ? (
               <div className="glass-card p-8 text-center text-muted-foreground">No shops found</div>
             ) : shops.map((s) => (
@@ -781,6 +834,108 @@ const AdminDashboard = () => {
                 </div>
               </div>
             ))}
+
+
+            {/* ── CREATE SHOP & CREDENTIALS HANDOVER MODAL ── */}
+            {createShopModal && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 overflow-y-auto" onClick={() => setCreateShopModal(false)}>
+                <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
+                  className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 max-w-xl w-full my-8 shadow-2xl" onClick={e => e.stopPropagation()}>
+                  
+                  {!createdCredentials ? (
+                    <form onSubmit={handleCreateShopWithCredentials} className="space-y-4">
+                      <div className="flex items-center justify-between border-b pb-3">
+                        <h3 className="font-heading font-bold text-lg text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                          🏬 Add New Shop & Create Credentials
+                        </h3>
+                        <button type="button" onClick={() => setCreateShopModal(false)}><X className="h-5 w-5 text-slate-400" /></button>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <Label className="text-xs font-semibold">Shop Name *</Label>
+                          <Input required placeholder="e.g. Agrawal Xerox Center" value={shopFormData.shopName} onChange={e => setShopFormData({...shopFormData, shopName: e.target.value})} className="mt-1" />
+                        </div>
+                        <div>
+                          <Label className="text-xs font-semibold">Owner Full Name *</Label>
+                          <Input required placeholder="e.g. Sanket Jadhav" value={shopFormData.ownerName} onChange={e => setShopFormData({...shopFormData, ownerName: e.target.value})} className="mt-1" />
+                        </div>
+                        <div>
+                          <Label className="text-xs font-semibold">Login Email (ID) *</Label>
+                          <Input required type="email" placeholder="e.g. sanket@gmail.com" value={shopFormData.email} onChange={e => setShopFormData({...shopFormData, email: e.target.value})} className="mt-1" />
+                        </div>
+                        <div>
+                          <Label className="text-xs font-semibold">Login Password *</Label>
+                          <Input required placeholder="e.g. agrawal@123" value={shopFormData.password} onChange={e => setShopFormData({...shopFormData, password: e.target.value})} className="mt-1" />
+                        </div>
+                        <div>
+                          <Label className="text-xs font-semibold">Phone Number *</Label>
+                          <Input required placeholder="e.g. 9876543210" value={shopFormData.phone} onChange={e => setShopFormData({...shopFormData, phone: e.target.value})} className="mt-1" />
+                        </div>
+                        <div>
+                          <Label className="text-xs font-semibold">Razorpay Account ID (Optional)</Label>
+                          <Input placeholder="e.g. acc_Hk82b7xZ91" value={shopFormData.razorpayAccountId} onChange={e => setShopFormData({...shopFormData, razorpayAccountId: e.target.value})} className="mt-1" />
+                        </div>
+                      </div>
+
+                      <div className="border-t pt-3 space-y-2">
+                        <Label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Shop Address</Label>
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                          <Input placeholder="Street Address" value={shopFormData.street} onChange={e => setShopFormData({...shopFormData, street: e.target.value})} />
+                          <Input placeholder="City" value={shopFormData.city} onChange={e => setShopFormData({...shopFormData, city: e.target.value})} />
+                          <Input placeholder="Pincode" value={shopFormData.pincode} onChange={e => setShopFormData({...shopFormData, pincode: e.target.value})} />
+                        </div>
+                      </div>
+
+                      <div className="border-t pt-3 space-y-2">
+                        <Label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Pricing Rates (₹ per page)</Label>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div><span className="text-[11px] text-muted-foreground">B&W 1-Side</span><Input type="number" step="0.5" value={shopFormData.bwSingleSided} onChange={e => setShopFormData({...shopFormData, bwSingleSided: e.target.value})} /></div>
+                          <div><span className="text-[11px] text-muted-foreground">B&W 2-Side (Sheet)</span><Input type="number" step="0.5" value={shopFormData.bwDoubleSided} onChange={e => setShopFormData({...shopFormData, bwDoubleSided: e.target.value})} /></div>
+                        </div>
+                      </div>
+
+                      <div className="flex gap-2 pt-4 border-t">
+                        <Button type="submit" disabled={creatingShop} className="flex-1 sunrise-gradient text-white font-medium">
+                          {creatingShop ? 'Creating Shop Account...' : '✨ Create Shop & Generate Handover Credentials'}
+                        </Button>
+                        <Button type="button" variant="outline" onClick={() => setCreateShopModal(false)}>Cancel</Button>
+                      </div>
+                    </form>
+                  ) : (
+                    /* ── HANDOVER CREDENTIALS CARD ── */
+                    <div className="space-y-4 text-center">
+                      <div className="w-12 h-12 rounded-full bg-green-100 text-green-600 flex items-center justify-center mx-auto">
+                        <CheckCircle className="h-6 w-6" />
+                      </div>
+                      <h3 className="font-heading font-bold text-xl text-slate-900 dark:text-slate-100">
+                        🎉 Shop Created Successfully!
+                      </h3>
+                      <p className="text-xs text-muted-foreground">Copy these credentials and hand them over directly to the shopkeeper:</p>
+
+                      <div className="bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl p-4 text-left font-mono text-xs space-y-2 select-all">
+                        <p><strong>🏬 Shop Name:</strong> {shopFormData.shopName}</p>
+                        <p><strong>👤 Owner Name:</strong> {createdCredentials.ownerName}</p>
+                        <p><strong>📧 Login Email (ID):</strong> {createdCredentials.email}</p>
+                        <p><strong>🔑 Password:</strong> {createdCredentials.password}</p>
+                        <p><strong>🔗 Login URL:</strong> {createdCredentials.loginUrl}</p>
+                      </div>
+
+                      <div className="flex gap-2 pt-2">
+                        <Button className="flex-1 sunrise-gradient text-white font-semibold" onClick={() => {
+                          const text = `🏬 SMART XEROX SHOPKEEPER LOGIN\n\nShop: ${shopFormData.shopName}\nOwner: ${createdCredentials.ownerName}\nEmail: ${createdCredentials.email}\nPassword: ${createdCredentials.password}\nLogin URL: ${createdCredentials.loginUrl}`;
+                          navigator.clipboard.writeText(text);
+                          toast.success('Credentials copied to clipboard!');
+                        }}>
+                          📋 Copy Credentials for WhatsApp
+                        </Button>
+                        <Button variant="outline" onClick={() => { setCreateShopModal(false); setCreatedCredentials(null); }}>Done</Button>
+                      </div>
+                    </div>
+                  )}
+                </motion.div>
+              </div>
+            )}
 
             {/* Reject modal */}
             {rejectModal && (

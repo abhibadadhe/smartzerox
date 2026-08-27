@@ -236,7 +236,7 @@ const globalLimiter = rateLimit({
 const authLimiter = rateLimit({
   ...(process.env.REDIS_URL ? { store: createRateLimitStore('auth') } : {}),
   windowMs: 15 * 60 * 1000,
-  max: 30,
+  max: 100,
   message: { success: false, message: 'Too many auth attempts, please try again later.' },
   skipSuccessfulRequests: true,
 });
@@ -244,7 +244,7 @@ const authLimiter = rateLimit({
 const otpLimiter = rateLimit({
   ...(process.env.REDIS_URL ? { store: createRateLimitStore('otp') } : {}),
   windowMs: 15 * 60 * 1000,
-  max: 10,
+  max: 1000,
   message: { success: false, message: 'Too many OTP requests. Try again in 15 minutes.' },
 });
 

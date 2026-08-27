@@ -330,27 +330,28 @@ const ShopOrders = ({ handleReject, triggerPrint, handleVerifyPickup, handleUpda
                         </button>
                       )}
                       <div className="flex flex-col items-end gap-1.5">
+                        {['paid', 'accepted'].includes(order.status) && (
+                          <button
+                            onClick={() => triggerPrint ? triggerPrint(order._id) : setDetailsModal({ open: true, order })}
+                            className="px-3.5 py-1.5 text-xs font-bold text-white sunrise-gradient rounded-xl shadow-md shadow-orange-500/20 hover:scale-105 transition-all flex items-center gap-1.5 shrink-0"
+                          >
+                            <Printer size={14} />
+                            Print Order
+                          </button>
+                        )}
                         {order.status === 'queued' && (
                           <span className="text-xs text-blue-600 font-semibold px-2 py-1 bg-blue-50 rounded-lg border border-blue-200">
-                            ⏳ Queued — waiting for print agent
-                          </span>
-                        )}
-                        {order.status === 'paid' && (
-                          <span className="text-xs text-yellow-600 font-semibold px-2 py-1 bg-yellow-50 rounded-lg border border-yellow-200 animate-pulse">
-                            ⚡ Dispatching to printer...
-                          </span>
-                        )}
-                        {order.status === 'accepted' && (
-                          <span className="text-xs text-indigo-600 font-semibold px-2 py-1 bg-indigo-50 rounded-lg border border-indigo-200 animate-pulse">
-                            🖨️ Sending to printer...
+                            ⏳ Queued — waiting for printer
                           </span>
                         )}
                         {order.status === 'printing' && (
-                          <span className="text-xs text-purple-600 font-semibold animate-pulse">🖨️ Printing...</span>
+                          <span className="text-xs text-purple-600 font-semibold px-2 py-1 bg-purple-50 rounded-lg border border-purple-200 animate-pulse flex items-center gap-1">
+                            <Printer size={14} /> Printing in Progress...
+                          </span>
                         )}
                         {order.status === 'ready' && (
                           <span className="text-xs text-emerald-600 font-semibold px-2 py-1 bg-emerald-50 rounded-lg border border-emerald-200">
-                            ✅ Print Complete
+                            ✅ Ready for Pickup
                           </span>
                         )}
                       </div>

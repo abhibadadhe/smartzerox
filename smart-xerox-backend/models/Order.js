@@ -133,6 +133,9 @@ const orderSchema = new mongoose.Schema(
       razorpayOrderId: String,
       razorpayPaymentId: String,
       razorpaySignature: String,
+      razorpayTransferId: String,
+      platformCommission: { type: Number, default: 0 }, // Admin margin in paise
+      shopPayout: { type: Number, default: 0 },         // Shopkeeper payout in paise
       status: { type: String, enum: ['pending', 'paid', 'failed', 'refunded'], default: 'pending' },
       paidAt: Date,
       method: String,

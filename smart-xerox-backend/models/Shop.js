@@ -88,6 +88,10 @@ const shopSchema = new mongoose.Schema(
       bankName: String,
     },
     upiId: { type: String, select: false },
+    // Razorpay Route Split Payment Settings
+    razorpayAccountId: { type: String, trim: true, default: null }, // e.g. 'acc_Hk82b7xZ91'
+    commissionPercentage: { type: Number, default: 5.0, min: 0, max: 100 }, // Platform margin %
+    splitPaymentEnabled: { type: Boolean, default: false },
     notifications: {
       newOrder: { type: Boolean, default: true },
       orderExpiry: { type: Boolean, default: true },

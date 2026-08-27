@@ -1,0 +1,22 @@
+{
+  "apiUrl": "https://api.pratibimb.online",
+  "shopkeeperEmail": "pratibimb@example.com",
+  "shopkeeperPassword": "Password@123",
+  "silentPrint": true,
+  "printers": [
+    {
+      "name": "AISSMS Canon IR 6000 (B&W)",
+      "ipAddress": "192.168.1.80",
+      "port": 9100,
+      "protocol": "raw",
+      "type": "bw"
+    },
+    {
+      "name": "AISSMS HP PageWide 577 (Color)",
+      "ipAddress": "192.168.1.244",
+      "port": 631,
+      "protocol": "ipp",
+      "type": "color"
+    }
+  ]
+}
