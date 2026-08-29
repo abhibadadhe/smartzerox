@@ -140,13 +140,8 @@ async function handlePrintJob(orderData) {
 
       console.log(`🖨️ AUTO-PRINTING ➔ Streaming to ${targetPrinter.name} (${targetPrinter.ipAddress}:9100)...`);
 
-      if (targetPrinter.protocol === 'ipp') {
-        await printViaIpp(pdfBuffer, targetPrinter, doc.originalName);
-      } else {
-        await printViaRawSocket(pdfBuffer, targetPrinter);
-      }
-
-      console.log(`🎉 SUCCESS! Paper printed directly from ${targetPrinter.name}!`);
+      const isDuplex = doc.duplex !== undefined ? doc.duplex : true;
+      await printDocument(pdfBuffer, targetPrinter, doc.originalName, isDuplex);
     }
 
     // 2. Mark order as READY for pickup on Dashboard (shows "Ready for Pickup")
@@ -165,7 +160,61 @@ function downloadFile(url) {
   return axios.get(url, { responseType: 'arraybuffer' }).then(res => Buffer.from(res.data));
 }
 
-function printViaIpp(pdfBuffer, printerConfig, filename) {
+async function printDocument(pdfBuffer, targetPrinter, docName, duplex = true) {
+  const tempDir = path.join(__dirname, 'temp_print');
+  if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
+  const tempPdfPath = path.join(tempDir, `job_${Date.now()}_${Math.random().toString(36).substring(2, 6)}.pdf`);
+  fs.writeFileSync(tempPdfPath, pdfBuffer);
+
+  let printed = false;
+
+  // 1. Try Windows Spooler if a matching Windows printer exists
+  try {
+    const ptp = require('pdf-to-printer');
+    const winPrinters = await ptp.getPrinters().catch(() => []);
+    const match = winPrinters.find(p => 
+      p.name?.toLowerCase().includes(targetPrinter.name?.toLowerCase()) ||
+      p.deviceId?.toLowerCase().includes(targetPrinter.name?.toLowerCase())
+    );
+
+    if (match) {
+      console.log(`🖨️ [Windows Spooler] Printing to installed Windows driver: ${match.name} (Duplex: ${duplex ? 'ON' : 'OFF'})...`);
+      await ptp.print(tempPdfPath, {
+        printer: match.name,
+        duplex: duplex ? 'duplex' : 'simplex'
+      });
+      console.log(`🎉 SUCCESS! Paper printed via Windows Driver: ${match.name}!`);
+      printed = true;
+    }
+  } catch (winErr) {
+    console.warn(`⚠️ Windows Spooler note: ${winErr.message}`);
+  }
+
+  // 2. If not printed via Windows driver, try direct network protocols (IPP & PJL-RAW)
+  if (!printed) {
+    if (targetPrinter.protocol === 'ipp' || targetPrinter.port === 631) {
+      console.log(`🖨️ [IPP Protocol] Sending print job to ${targetPrinter.ipAddress}:631/ipp/print...`);
+      try {
+        await printViaIpp(pdfBuffer, targetPrinter, docName, duplex);
+        printed = true;
+      } catch (ippErr) {
+        console.warn(`⚠️ IPP print failed (${ippErr.message}) -> Falling back to PJL-RAW Port 9100...`);
+        await printViaPjlRawSocket(pdfBuffer, targetPrinter, docName, duplex);
+        printed = true;
+      }
+    } else {
+      console.log(`🖨️ [PJL-RAW Protocol] Streaming PDF to ${targetPrinter.ipAddress}:${targetPrinter.port || 9100} with PJL headers...`);
+      await printViaPjlRawSocket(pdfBuffer, targetPrinter, docName, duplex);
+      printed = true;
+    }
+  }
+
+  // Cleanup temp file
+  try { if (fs.existsSync(tempPdfPath)) fs.unlinkSync(tempPdfPath); } catch (e) {}
+  return printed;
+}
+
+function printViaIpp(pdfBuffer, printerConfig, filename, duplex = true) {
   return new Promise((resolve, reject) => {
     const printerUrl = `http://${printerConfig.ipAddress}:${printerConfig.port || 631}/ipp/print`;
     const printer = ipp.Printer(printerUrl);
@@ -176,26 +225,59 @@ function printViaIpp(pdfBuffer, printerConfig, filename) {
         'job-name': filename || 'DirectOrder.pdf',
         'document-format': 'application/pdf'
       },
+      'job-attributes-tag': {
+        'sides': duplex ? 'two-sided-long-edge' : 'one-sided',
+        'copies': 1
+      },
       data: pdfBuffer
     };
 
     printer.execute('Print-Job', msg, (err, res) => {
       if (err) return reject(err);
+      console.log(`🎉 SUCCESS! IPP Job accepted by ${printerConfig.name}!`);
       resolve(res);
     });
   });
 }
 
-function printViaRawSocket(pdfBuffer, printerConfig) {
+function printViaPjlRawSocket(pdfBuffer, printerConfig, filename, duplex = true) {
   return new Promise((resolve, reject) => {
     const net = require('net');
-    const client = net.connect({ host: printerConfig.ipAddress, port: printerConfig.port || 9100 }, () => {
-      client.write(pdfBuffer);
-      client.end();
+    const port = printerConfig.port || 9100;
+    const client = new net.Socket();
+    client.setTimeout(15000);
+
+    // Standard PJL wrapper for Canon / HP Direct PDF interpretation
+    const pjlHeader = Buffer.from(
+      '\x1b%-12345X@PJL\r\n' +
+      `@PJL JOB NAME = "${filename || 'SmartXerox_DirectOrder'}"\r\n` +
+      (duplex ? '@PJL SET DUPLEX = ON\r\n@PJL SET BINDING = LONGEDGE\r\n' : '@PJL SET DUPLEX = OFF\r\n') +
+      '@PJL ENTER LANGUAGE = PDF\r\n'
+    );
+    const pjlFooter = Buffer.from('\r\n\x1b%-12345X@PJL EOJ\r\n\x1b%-12345X');
+    const fullPayload = Buffer.concat([pjlHeader, pdfBuffer, pjlFooter]);
+
+    client.connect(port, printerConfig.ipAddress, () => {
+      console.log(`⚡ Connected to printer socket ${printerConfig.ipAddress}:${port} -> Writing ${fullPayload.length} bytes...`);
+      client.write(fullPayload, () => {
+        client.end();
+      });
+    });
+
+    client.on('close', () => {
+      console.log(`🎉 SUCCESS! Paper print data flushed to ${printerConfig.name} (${printerConfig.ipAddress}:${port})!`);
       resolve();
     });
 
-    client.on('error', (err) => reject(err));
+    client.on('error', (err) => {
+      client.destroy();
+      reject(err);
+    });
+
+    client.on('timeout', () => {
+      client.destroy();
+      reject(new Error(`Connection to ${printerConfig.ipAddress}:${port} timed out after 15s`));
+    });
   });
 }
 
