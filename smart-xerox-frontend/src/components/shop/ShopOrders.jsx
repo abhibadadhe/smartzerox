@@ -330,7 +330,7 @@ const ShopOrders = ({ handleReject, triggerPrint, handleVerifyPickup, handleUpda
                         </button>
                       )}
                       <div className="flex flex-col items-end gap-1.5">
-                        {['paid', 'queued', 'accepted'].includes(order.status) && (
+                        {['paid', 'queued'].includes(order.status) && (
                           <button
                             onClick={() => triggerPrint ? triggerPrint(order._id) : setDetailsModal({ open: true, order })}
                             className="px-3.5 py-1.5 text-xs font-bold text-white sunrise-gradient rounded-xl shadow-md shadow-orange-500/20 hover:scale-105 transition-all flex items-center gap-1.5 shrink-0"
@@ -339,18 +339,14 @@ const ShopOrders = ({ handleReject, triggerPrint, handleVerifyPickup, handleUpda
                             Print Order
                           </button>
                         )}
-                        {order.status === 'queued' && (
-                          <span className="text-xs text-blue-600 font-semibold px-2 py-1 bg-blue-50 rounded-lg border border-blue-200">
-                            ⏳ Queued — waiting for printer
-                          </span>
-                        )}
-                        {order.status === 'printing' && (
-                          <span className="text-xs text-purple-600 font-semibold px-2 py-1 bg-purple-50 rounded-lg border border-purple-200 animate-pulse flex items-center gap-1">
-                            <Printer size={14} /> Printing in Progress...
+                        {['accepted', 'printing'].includes(order.status) && (
+                          <span className="text-xs text-purple-700 font-bold px-3 py-1.5 bg-purple-50 rounded-xl border border-purple-200 animate-pulse flex items-center gap-1.5 shadow-sm">
+                            <Printer size={14} className="animate-spin text-purple-600" />
+                            Printing in Progress...
                           </span>
                         )}
                         {order.status === 'ready' && (
-                          <span className="text-xs text-emerald-600 font-semibold px-2 py-1 bg-emerald-50 rounded-lg border border-emerald-200">
+                          <span className="text-xs text-emerald-700 font-bold px-3 py-1.5 bg-emerald-50 rounded-xl border border-emerald-200 flex items-center gap-1 shadow-sm">
                             ✅ Ready for Pickup
                           </span>
                         )}

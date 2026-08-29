@@ -102,7 +102,12 @@ function connectWebSocket() {
 async function handlePrintJob(orderData) {
   try {
     const orderId = orderData.orderId || orderData._id;
-    console.log(`\n⚡ ORDER PLACED! Fetching Order #${orderData.orderNumber || orderId}...`);
+    console.log(`\n⚡ INCOMING ORDER #${orderData.orderNumber || orderId} RECEIVED!`);
+
+    // 1. Notify Cloud Dashboard that printing has started (shows "Printing in Progress...")
+    await axios.patch(`${API_URL}/api/orders/${orderId}/status`, { status: 'printing' }, {
+      headers: { Authorization: `Bearer ${token}` }
+    }).catch(() => {});
 
     const orderRes = await axios.get(`${API_URL}/api/orders/${orderId}`, {
       headers: { Authorization: `Bearer ${token}` }
@@ -121,7 +126,7 @@ async function handlePrintJob(orderData) {
       const isColor = doc.printingRanges?.some(r => r.colorMode === 'color');
       const targetPrinter = config.printers.find(p => isColor ? p.type === 'color' : p.type === 'bw') || config.printers[0];
 
-      console.log(`🖨️ DIRECT SILENT PRINT ➔ Sending to ${targetPrinter.name} (${targetPrinter.ipAddress})... NO DIALOGS!`);
+      console.log(`🖨️ AUTO-PRINTING ➔ Streaming to ${targetPrinter.name} (${targetPrinter.ipAddress}:9100)...`);
 
       if (targetPrinter.protocol === 'ipp') {
         await printViaIpp(pdfBuffer, targetPrinter, doc.originalName);
@@ -131,6 +136,13 @@ async function handlePrintJob(orderData) {
 
       console.log(`🎉 SUCCESS! Paper printed directly from ${targetPrinter.name}!`);
     }
+
+    // 2. Mark order as READY for pickup on Dashboard (shows "Ready for Pickup")
+    await axios.patch(`${API_URL}/api/orders/${orderId}/status`, { status: 'ready' }, {
+      headers: { Authorization: `Bearer ${token}` }
+    }).catch(() => {});
+
+    console.log(`✅ Order #${order.orderNumber || orderId} marked READY for pickup on Dashboard!`);
 
   } catch (err) {
     console.error('❌ Direct Print Error:', err.message);
