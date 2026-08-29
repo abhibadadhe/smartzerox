@@ -417,6 +417,31 @@ async function printViaIpp(order, printer, retryCount = 0, maxRetries = 3) {
     throw new Error(`Printer ${printer.name} does not have an IP address configured for IPP.`);
   }
 
+  // If printer is on private local LAN (192.168.x.x, 10.x.x.x), route through Shop Desktop Agent
+  const isPrivateLanIp = /^192\.168\.|^10\.|^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(printer.ipAddress);
+  if (isPrivateLanIp) {
+    const shopId = (order.shop?._id || order.shop)?.toString();
+    logger.info(`📡 [Print Dispatch] Private LAN IP ${printer.ipAddress} detected. Dispatching Order #${order.orderNumber || order._id} to Shop Desktop Print Agent over WebSocket!`);
+
+    if (shopId) {
+      const payload = {
+        orderId: order._id,
+        orderNumber: order.orderNumber,
+        printer: {
+          name: printer.name,
+          displayName: printer.displayName,
+          ipAddress: printer.ipAddress,
+          port: printer.port || 9100,
+          protocol: printer.protocol || 'raw'
+        }
+      };
+      emitToShop(shopId, 'print:job', payload);
+      emitToShop(shopId, 'order:accepted', payload);
+    }
+
+    return { success: true, dispatchedToAgent: true };
+  }
+
   // If ipAddress is a hostname (e.g. Cloudflare tunnel domain like printer1.pratibimb.online),
   // don't append :631 since the tunnel already routes to the correct port internally.
   // If it's a raw IP address (e.g. 192.168.1.80), append :631 for direct IPP access.
