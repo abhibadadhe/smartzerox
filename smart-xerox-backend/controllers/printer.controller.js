@@ -664,7 +664,7 @@ exports.addManualPrinter = asyncHandler(async (req, res) => {
         initialPreferred = probeResult.preferredFormat || 'application/pdf';
         initialDuplex = probeResult.supportsDuplex !== undefined ? probeResult.supportsDuplex : true;
         initialPort = probeResult.activePort || 9100;
-        if (probeResult.model) initialModel = probeResult.model;
+        // Preserve user entered name, do not overwrite with generic RAW Network Printer
         logger.info(`✅ [Add Printer] Real-time probe SUCCESS for ${cleanIp}: Online / PDF / Duplex!`);
       } else {
         logger.info(`⚠️ [Add Printer] Real-time probe reported unreachable for ${cleanIp} -> Marked Offline`);
@@ -677,7 +677,7 @@ exports.addManualPrinter = asyncHandler(async (req, res) => {
   const printer = await Printer.create({
     shop: shop._id,
     name: name.trim(),
-    displayName: initialModel,
+    displayName: name.trim(),
     systemName,
     ipAddress: cleanIp,
     port: initialPort,
@@ -795,7 +795,7 @@ exports.detectFormats = asyncHandler(async (req, res) => {
     printer.supportedFormats = detectedViaAgent.formats || ['application/pdf'];
     printer.preferredFormat = detectedViaAgent.preferredFormat || 'application/pdf';
     printer.supportsDuplex = detectedViaAgent.supportsDuplex !== undefined ? detectedViaAgent.supportsDuplex : true;
-    if (detectedViaAgent.model) printer.displayName = detectedViaAgent.model;
+    // Preserve user entered name
     printer.formatDetectedAt = new Date();
     await printer.save({ validateBeforeSave: false });
 
@@ -847,7 +847,7 @@ exports.reportLanDetection = asyncHandler(async (req, res) => {
     printer.preferredFormat = preferredFormat || 'application/pdf';
     printer.supportsDuplex = supportsDuplex !== undefined ? supportsDuplex : true;
     if (activePort) printer.port = activePort;
-    if (model) printer.displayName = model;
+    // Preserve user entered name
     printer.formatDetectedAt = new Date();
     await printer.save({ validateBeforeSave: false });
 
