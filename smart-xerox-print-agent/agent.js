@@ -134,7 +134,7 @@ async function handlePrintJob(orderData) {
     }).catch(() => null);
     const shopPrinters = printersRes?.data?.data?.printers || printersRes?.data?.data || [];
 
-        for (const doc of (order.documents || [])) {
+            for (const doc of (order.documents || [])) {
       const fileUrl = doc.downloadUrl || doc.fileUrl || doc.url || doc.s3Url;
       if (!fileUrl) {
         console.warn(`⚠️ No download URL found for: ${doc.originalName || 'document'}`);
@@ -144,48 +144,63 @@ async function handlePrintJob(orderData) {
       console.log(`⬇️ Downloading PDF: ${doc.originalName}...`);
       const pdfBuffer = await downloadFile(fileUrl);
 
-      // Extract accurate customer print options from order
-      const isColor = doc.printingRanges ? doc.printingRanges.some(r => r.colorMode === 'color') : false;
-      const isDoubleSided = doc.printingRanges ? doc.printingRanges.some(r => r.sides === 'double' || r.side === 'double') : (doc.duplex !== false);
-      const copies = doc.printingRanges?.[0]?.copies || 1;
-      const paperSize = doc.printingOptions?.paperSize || 'A4';
-      
-      let pageRangeStr = undefined;
-      if (doc.printingRanges && doc.printingRanges.length > 0) {
-        const r = doc.printingRanges[0];
+      // Support multi-range printing (e.g. Range 1 = Color, Range 2 = B&W)
+      const ranges = (doc.printingRanges && doc.printingRanges.length > 0)
+        ? doc.printingRanges
+        : [{ rangeStart: 1, rangeEnd: doc.detectedPages || null, colorMode: 'bw', sides: 'single', copies: 1 }];
+
+      for (let rIdx = 0; rIdx < ranges.length; rIdx++) {
+        const r = ranges[rIdx];
+        const isColor = r.colorMode === 'color';
+        const isDoubleSided = r.sides === 'double' || r.side === 'double';
+        const copies = r.copies || 1;
+        const paperSize = doc.printingOptions?.paperSize || 'A4';
+        
+        let pageRangeStr = undefined;
         if (r.rangeStart && r.rangeEnd) {
           pageRangeStr = `${r.rangeStart}-${r.rangeEnd}`;
         }
-      }
-      
-      let targetPrinter = null;
-      if (order.assignedPrinter) {
-        const assignedId = typeof order.assignedPrinter === 'object' ? order.assignedPrinter._id : order.assignedPrinter;
-        targetPrinter = shopPrinters.find(p => p._id.toString() === assignedId.toString());
-      }
-      if (!targetPrinter && orderData.printer) {
-        targetPrinter = orderData.printer;
-      }
-      if (!targetPrinter) {
-        targetPrinter = shopPrinters.find(p => isColor ? p.type === 'color' : p.type === 'bw') || shopPrinters[0];
-      }
-      if (!targetPrinter && config.printers && config.printers.length > 0) {
-        targetPrinter = config.printers.find(p => isColor ? p.type === 'color' : p.type === 'bw') || config.printers[0];
-      }
 
-      if (!targetPrinter) {
-        targetPrinter = { name: 'Default Printer', ipAddress: '192.168.1.80', port: 9100, protocol: 'raw' };
+        // Automatic Smart Routing: Color -> HP 577 | B&W -> Canon Fleet
+        let targetPrinter = null;
+        if (isColor) {
+          targetPrinter = shopPrinters.find(p => p.type === 'color' && p.isEnabled !== false) ||
+                          config.printers.find(p => p.type === 'color') ||
+                          { name: 'printer HP', ipAddress: '192.168.1.244', port: 9100, type: 'color' };
+        } else {
+          if (order.assignedPrinter) {
+            const assignedId = typeof order.assignedPrinter === 'object' ? order.assignedPrinter._id : order.assignedPrinter;
+            targetPrinter = shopPrinters.find(p => p._id.toString() === assignedId.toString());
+          }
+          if (!targetPrinter && orderData.printer && orderData.printer.type !== 'color') {
+            targetPrinter = orderData.printer;
+          }
+          if (!targetPrinter) {
+            targetPrinter = shopPrinters.find(p => p.type === 'bw' && p.isEnabled !== false) ||
+                            config.printers.find(p => p.type === 'bw') ||
+                            shopPrinters[0] || config.printers[0];
+          }
+        }
+
+        if (!targetPrinter) {
+          targetPrinter = { name: 'Default Printer', ipAddress: '192.168.1.80', port: 9100, protocol: 'raw' };
+        }
+
+        const modeStr = isColor ? '🎨 COLOR' : '🖤 B&W';
+        const sideStr = isDoubleSided ? '📖 DOUBLE-SIDED (Back-to-Back)' : '📄 SINGLE-SIDED';
+        const pagesStr = pageRangeStr ? `Pages ${pageRangeStr}` : 'All Pages';
+
+        console.log(`\n🖨️ [Print Job ${rIdx + 1}/${ranges.length}] ➔ ${targetPrinter.displayName || targetPrinter.name} (${targetPrinter.ipAddress || 'Windows Driver'})`);
+        console.log(`   ⚙️ Config: ${modeStr} | ${sideStr} | ${pagesStr} | Copies: ${copies} | Paper: ${paperSize}`);
+
+        await printDocument(pdfBuffer, targetPrinter, doc.originalName, {
+          duplex: isDoubleSided,
+          monochrome: !isColor,
+          paperSize: paperSize,
+          copies: copies,
+          pages: pageRangeStr
+        });
       }
-
-      console.log(`🖨️ SENDING TO PRINTER ➔ ${targetPrinter.displayName || targetPrinter.name} (IP: ${targetPrinter.ipAddress || 'Windows Driver'}) | Duplex: ${isDoubleSided ? 'DOUBLE-SIDED (Back-to-Back)' : 'SINGLE-SIDED'} | Copies: ${copies}...`);
-
-      await printDocument(pdfBuffer, targetPrinter, doc.originalName, {
-        duplex: isDoubleSided,
-        monochrome: !isColor,
-        paperSize: paperSize,
-        copies: copies,
-        pages: pageRangeStr
-      });
     }
 
     // 2. Mark order as READY for pickup on Dashboard (shows "Ready for Pickup")
