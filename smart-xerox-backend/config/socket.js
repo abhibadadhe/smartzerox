@@ -254,6 +254,31 @@ const initSocket = (server) => {
     });
 
 
+    
+    // ── Real-time LAN hardware detection report from Agent ───────────────
+    socket.on('printer:detect_lan_result', async (payload) => {
+      if (payload && payload.printerId && payload.isOnline) {
+        try {
+          const Printer = require('../models/Printer');
+          const updated = await Printer.findByIdAndUpdate(payload.printerId, {
+            status: 'running',
+            isEnabled: true,
+            supportedFormats: payload.formats || ['application/pdf', 'application/postscript', 'application/octet-stream'],
+            preferredFormat: payload.preferredFormat || 'application/pdf',
+            supportsDuplex: payload.supportsDuplex !== undefined ? payload.supportsDuplex : true,
+            port: payload.activePort || 9100,
+            formatDetectedAt: new Date()
+          }, { new: true });
+          if (updated) {
+            emitToShop(updated.shop.toString(), 'printer:status_update', { printers: [updated] });
+            logger.info(`✅ [Socket] Live hardware detection synced for ${updated.name}: Online / PDF ✓ / Duplex ✓`);
+          }
+        } catch (err) {
+          logger.warn(`Could not sync probe result: ${err.message}`);
+        }
+      }
+    });
+
     socket.on('disconnect', (reason) => {
       logger.info(`Socket disconnected: ${socket.id} | Reason: ${reason}`);
     });

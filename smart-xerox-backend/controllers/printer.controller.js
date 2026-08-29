@@ -780,3 +780,41 @@ exports.detectFormats = asyncHandler(async (req, res) => {
     data: { printer, detected: result }
   });
 });
+
+// Report LAN hardware detection result directly via REST API
+exports.reportLanDetection = asyncHandler(async (req, res) => {
+  const { isOnline, formats, preferredFormat, supportsDuplex, activePort, model } = req.body;
+  const printer = await Printer.findById(req.params.id).populate('shop');
+
+  if (!printer) throw new AppError('Printer not found', 404);
+
+  if (isOnline) {
+    printer.status = 'running';
+    printer.isEnabled = true;
+    printer.supportedFormats = formats || ['application/pdf', 'application/postscript', 'application/octet-stream'];
+    printer.preferredFormat = preferredFormat || 'application/pdf';
+    printer.supportsDuplex = supportsDuplex !== undefined ? supportsDuplex : true;
+    if (activePort) printer.port = activePort;
+    if (model) printer.displayName = model;
+    printer.formatDetectedAt = new Date();
+    await printer.save({ validateBeforeSave: false });
+
+    emitToShop(printer.shop._id.toString(), 'printer:status_update', { printers: [printer] });
+
+    return res.status(200).json({
+      success: true,
+      message: `✅ Live Hardware Detected: ${printer.displayName || printer.name} is Online (PDF: ✓, Duplex: ${printer.supportsDuplex ? '✓' : '✗'})`,
+      data: { printer }
+    });
+  }
+
+  printer.status = 'offline';
+  await printer.save({ validateBeforeSave: false });
+  emitToShop(printer.shop._id.toString(), 'printer:status_update', { printers: [printer] });
+
+  res.status(200).json({
+    success: false,
+    message: '⚠️ Printer is offline or unreachable on the network',
+    data: { printer }
+  });
+});

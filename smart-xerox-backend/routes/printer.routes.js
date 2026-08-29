@@ -1,7 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const printerController = require('../controllers/printer.controller');
-const { protect, restrictTo } = require('../middleware/auth');
+const {
+  reportLanDetection, protect, restrictTo } = require('../middleware/auth');
 const { validateObjectId } = require('../middleware/validate');
 
 router.use(protect);
@@ -22,6 +23,7 @@ router.patch('/:id/display-name', validateObjectId('id'), restrictTo('shopkeeper
 router.patch('/:id/status', validateObjectId('id'), restrictTo('shopkeeper'), printerController.updatePrinterStatus);
 router.patch('/:id/decrease-load', validateObjectId('id'), restrictTo('shopkeeper'), printerController.decreasePrinterLoad);
 router.patch('/:id/ip', validateObjectId('id'), restrictTo('shopkeeper'), printerController.updatePrinterIp);
+router.post('/:id/lan-detect-report', authenticate, reportLanDetection);
 router.post('/:id/detect-formats', validateObjectId('id'), restrictTo('shopkeeper'), printerController.detectFormats);
 
 module.exports = router;

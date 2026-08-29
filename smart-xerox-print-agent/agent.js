@@ -63,9 +63,10 @@ function connectWebSocket() {
     const { requestId, ipAddress, port = 631, printerId } = data;
     console.log(`🔍 [Real-Time Detect] Probing printer at ${ipAddress}:${port} on local LAN...`);
 
-    try {
+        try {
       const probeResult = await probePrinterHardware(ipAddress, port);
       console.log(`✅ [Real-Time Detect] Result for ${ipAddress}:`, probeResult);
+      
       socket.emit('printer:detect_lan_result', {
         requestId,
         printerId,
@@ -74,12 +75,10 @@ function connectWebSocket() {
         ...probeResult
       });
 
-      // Also persist directly via REST API so database updates instantaneously
-      if (printerId && probeResult.isOnline) {
-        axios.put(`${API_URL}/api/printers/${printerId}/status`, {
-          status: 'running',
-          isEnabled: true
-        }, { headers: { Authorization: `Bearer ${token}` } }).catch(() => {});
+      if (printerId) {
+        axios.post(`${API_URL}/api/printers/${printerId}/lan-detect-report`, probeResult, {
+          headers: { Authorization: `Bearer ${token}` }
+        }).catch(() => {});
       }
     } catch (err) {
       console.warn(`⚠️ [Real-Time Detect] Failed to probe ${ipAddress}: ${err.message}`);
