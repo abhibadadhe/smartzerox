@@ -16,6 +16,8 @@ const documentSchema = new mongoose.Schema({
   originalName: { type: String, required: true },
   s3Key: { type: String, required: true },
   s3Url: { type: String, required: true },
+  downloadUrl: { type: String },
+  fileUrl: { type: String },
   fileSize: Number,
   mimeType: String,
   detectedPages: { type: Number, default: 0, required: true },

@@ -455,15 +455,20 @@ exports.getOrder = asyncHandler(async (req, res) => {
     throw new AppError('Access denied', 403);
   }
 
+    const orderObj = order.toObject();
   if (isOwner || isAdmin || isShopOwner) {
-    for (const doc of order.documents) {
+    for (let i = 0; i < (orderObj.documents || []).length; i++) {
+      const doc = orderObj.documents[i];
       if (doc.s3Key) {
-        doc.downloadUrl = await getPresignedUrl(doc.s3Key, 900);
+        const url = await getPresignedUrl(doc.s3Key, 900);
+        doc.downloadUrl = url;
+        doc.fileUrl = url;
+        doc.url = url;
       }
     }
   }
 
-  res.status(200).json({ success: true, data: { order } });
+  res.status(200).json({ success: true, data: { order: orderObj } });
 });
 
 // ─── Get Shop Orders ──────────────────────────────────────────────────────────

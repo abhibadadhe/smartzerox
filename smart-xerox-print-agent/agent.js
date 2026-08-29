@@ -135,7 +135,7 @@ async function handlePrintJob(orderData) {
     const shopPrinters = printersRes?.data?.data?.printers || printersRes?.data?.data || [];
 
     for (const doc of (order.documents || [])) {
-      const fileUrl = doc.downloadUrl || doc.fileUrl || doc.url;
+      const fileUrl = doc.downloadUrl || doc.fileUrl || doc.url || doc.s3Url;
       if (!fileUrl) continue;
 
       console.log(`⬇️ Downloading PDF: ${doc.originalName}...`);
