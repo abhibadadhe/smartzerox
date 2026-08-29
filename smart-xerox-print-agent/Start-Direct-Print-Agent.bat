@@ -10,21 +10,51 @@ echo.
 cd /d "%~dp0"
 
 echo 🔍 Checking Node.js installation...
+
+:: Check standard PATH
 where node >nul 2>nul
-if %errorlevel% neq 0 (
-  color 0C
-  echo.
-  echo ❌ ERROR: Node.js is NOT installed on this computer!
-  echo ----------------------------------------------------
-  echo 1. Please download and install Node.js from:
-  echo    👉 https://nodejs.org (Download LTS Version)
-  echo 2. After installing Node.js, restart this bat file.
-  echo ----------------------------------------------------
-  echo.
-  pause
-  exit /b
+if %errorlevel% equ 0 goto node_ok
+
+:: Check default Program Files
+if exist "C:\Program Files\nodejs\node.exe" (
+  set "PATH=%PATH%;C:\Program Files\nodejs"
+  goto node_ok
 )
-echo ✅ Node.js is detected!
+
+:: Check x86 Program Files
+if exist "C:\Program Files (x86)\nodejs\node.exe" (
+  set "PATH=%PATH%;C:\Program Files (x86)\nodejs"
+  goto node_ok
+)
+
+:: Check Local AppData
+if exist "%LOCALAPPDATA%\Programs\nodejs\node.exe" (
+  set "PATH=%PATH%;%LOCALAPPDATA%\Programs\nodejs"
+  goto node_ok
+)
+
+:node_missing
+color 0C
+echo.
+echo ❌ ERROR: Node.js is NOT installed on this computer!
+echo ----------------------------------------------------
+echo To enable 100%% fully automated silent printing:
+echo 1. Install Node.js (Takes 1 minute):
+echo    👉 https://nodejs.org/dist/v20.17.0/node-v20.17.0-x64.msi
+echo.
+echo 2. OR open PowerShell and run:
+echo    👉 winget install OpenJS.NodeJS.LTS
+echo.
+echo 3. After installing Node.js, run this file again!
+echo ----------------------------------------------------
+echo.
+choice /m "Would you like to open the official Node.js installer download page now?"
+if %errorlevel% equ 1 start https://nodejs.org/en/download
+pause
+exit /b
+
+:node_ok
+echo ✅ Node.js detected successfully!
 
 echo.
 echo 🔍 Checking configuration file...

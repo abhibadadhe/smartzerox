@@ -108,8 +108,33 @@ const ShopDashboard = () => {
   };
 
   const triggerPrint = async (orderId) => {
-    window.location.href = ``;
-    toast.success('Opening Desktop Print Agent...');
+    try {
+      toast.loading('🖨️ Opening print document...', { id: 'print-toast' });
+      const res = await orderAPI.getById(orderId);
+      const order = res.data?.data?.order || res.data?.data || res.data?.order;
+      
+      // Dispatch background print signal
+      orderAPI.triggerPrint(orderId).catch(() => {});
+
+      if (order && order.documents && order.documents.length > 0) {
+        order.documents.forEach((doc, idx) => {
+          const fileUrl = doc.fileUrl || doc.url;
+          if (fileUrl) {
+            setTimeout(() => {
+              const win = window.open(fileUrl, '_blank');
+              if (win) win.focus();
+            }, idx * 300);
+          }
+        });
+        toast.success('✅ Document opened for direct printing!', { id: 'print-toast' });
+      } else {
+        toast.success('🖨️ Print command sent to printer!', { id: 'print-toast' });
+      }
+
+      fetchOrders(true);
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Could not fetch order document', { id: 'print-toast' });
+    }
   };
 
   const handleVerifyPickup = async (orderId, otp) => {
