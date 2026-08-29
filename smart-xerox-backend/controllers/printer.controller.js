@@ -702,33 +702,81 @@ exports.detectFormats = asyncHandler(async (req, res) => {
   if (printer.shop.owner.toString() !== req.user.id) throw new AppError('Access denied', 403);
   if (!printer.ipAddress) throw new AppError('Printer has no IP address configured', 400);
 
+  const shopId = printer.shop._id.toString();
+  const requestId = `req_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+
+  // 1. Try real-time probe via connected Desktop Agent on shop LAN
+  const { getIO } = require('../config/socket');
+  let detectedViaAgent = null;
+
+  try {
+    const io = getIO();
+    if (io) {
+      detectedViaAgent = await new Promise((resolve) => {
+        const timeout = setTimeout(() => {
+          io.off('printer:detect_lan_result', resultHandler);
+          resolve(null);
+        }, 4000);
+
+        const resultHandler = (payload) => {
+          if (payload && payload.requestId === requestId) {
+            clearTimeout(timeout);
+            io.off('printer:detect_lan_result', resultHandler);
+            resolve(payload);
+          }
+        };
+
+        io.on('printer:detect_lan_result', resultHandler);
+        io.to(`shop:${shopId}`).emit('printer:detect_lan', {
+          requestId,
+          printerId: printer._id.toString(),
+          ipAddress: printer.ipAddress,
+          port: printer.port || 9100
+        });
+      });
+    }
+  } catch (e) {}
+
+  if (detectedViaAgent && detectedViaAgent.isOnline) {
+    printer.status = 'running';
+    printer.isEnabled = true;
+    printer.supportedFormats = detectedViaAgent.formats || ['application/pdf'];
+    printer.preferredFormat = detectedViaAgent.preferredFormat || 'application/pdf';
+    printer.supportsDuplex = detectedViaAgent.supportsDuplex !== undefined ? detectedViaAgent.supportsDuplex : true;
+    if (detectedViaAgent.model) printer.displayName = detectedViaAgent.model;
+    printer.formatDetectedAt = new Date();
+    await printer.save({ validateBeforeSave: false });
+
+    emitToShop(shopId, 'printer:status_update', { printers: [printer] });
+
+    return res.status(200).json({
+      success: true,
+      message: `✅ Live Hardware Detected: ${printer.displayName || printer.name} is Online (PDF: ✓, Duplex: ${printer.supportsDuplex ? '✓' : '✗'})`,
+      data: { printer, detected: detectedViaAgent }
+    });
+  }
+
+  // 2. Direct IPP detection fallback
   const result = await detectAndStoreFormats(printer);
   
   if (!result) {
+    printer.status = 'offline';
+    printer.supportedFormats = [];
+    await printer.save({ validateBeforeSave: false });
+    emitToShop(shopId, 'printer:status_update', { printers: [printer] });
+
     return res.status(200).json({
       success: false,
-      message: 'Could not detect formats — printer may be offline or unreachable',
+      message: '⚠️ Printer is offline or unreachable on the network',
       data: { printer }
     });
   }
 
-  emitToShop(printer.shop._id.toString(), 'printer:status_update', { printers: [printer] });
-
-  let message = '✅ PDF supported natively';
-  if (!result.formats.includes('application/pdf')) {
-    if (result.preferred === 'application/postscript' || result.preferred.includes('pcl')) {
-      message = `✅ PDF converted to ${result.preferred === 'application/postscript' ? 'PS' : 'PCL'} via Ghostscript`;
-    } else {
-      message = '⚠️ PDF not supported — enable PDL→PDF on the printer';
-    }
-  }
+  emitToShop(shopId, 'printer:status_update', { printers: [printer] });
 
   res.status(200).json({
     success: true,
-    message,
-    data: {
-      printer,
-      detected: result
-    }
+    message: `✅ Hardware Detected: ${printer.name} (PDF: ✓)`,
+    data: { printer, detected: result }
   });
 });
