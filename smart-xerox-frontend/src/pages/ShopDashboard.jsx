@@ -108,7 +108,7 @@ const ShopDashboard = () => {
   };
 
   const triggerPrint = async (orderId) => {
-    window.location.href = `smartxerox://print/${orderId}`;
+    window.location.href = ``;
     toast.success('Opening Desktop Print Agent...');
   };
 
