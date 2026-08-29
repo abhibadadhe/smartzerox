@@ -128,17 +128,42 @@ async function handlePrintJob(orderData) {
     const order = orderRes.data.data?.order || orderRes.data.data;
     if (!order) return;
 
+    // Fetch shop printers from cloud backend to get the exact live IP & settings
+    const printersRes = await axios.get(`${API_URL}/api/printers/my-shop`, {
+      headers: { Authorization: `Bearer ${token}` }
+    }).catch(() => null);
+    const shopPrinters = printersRes?.data?.data?.printers || printersRes?.data?.data || [];
+
     for (const doc of (order.documents || [])) {
       const fileUrl = doc.fileUrl || doc.url;
       if (!fileUrl) continue;
 
-      console.log(`⬇️ Downloading PDF Stream: ${doc.originalName}...`);
+      console.log(`⬇️ Downloading PDF: ${doc.originalName}...`);
       const pdfBuffer = await downloadFile(fileUrl);
 
       const isColor = doc.printingRanges?.some(r => r.colorMode === 'color');
-      const targetPrinter = config.printers.find(p => isColor ? p.type === 'color' : p.type === 'bw') || config.printers[0];
+      
+      // Resolve target printer dynamically from cloud order or live shop printers
+      let targetPrinter = null;
+      if (order.assignedPrinter) {
+        const assignedId = typeof order.assignedPrinter === 'object' ? order.assignedPrinter._id : order.assignedPrinter;
+        targetPrinter = shopPrinters.find(p => p._id.toString() === assignedId.toString());
+      }
+      if (!targetPrinter && orderData.printer) {
+        targetPrinter = orderData.printer;
+      }
+      if (!targetPrinter) {
+        targetPrinter = shopPrinters.find(p => isColor ? p.type === 'color' : p.type === 'bw') || shopPrinters[0];
+      }
+      if (!targetPrinter && config.printers && config.printers.length > 0) {
+        targetPrinter = config.printers.find(p => isColor ? p.type === 'color' : p.type === 'bw') || config.printers[0];
+      }
 
-      console.log(`🖨️ AUTO-PRINTING ➔ Streaming to ${targetPrinter.name} (${targetPrinter.ipAddress}:9100)...`);
+      if (!targetPrinter) {
+        targetPrinter = { name: 'Default Printer', ipAddress: '192.168.1.80', port: 9100, protocol: 'raw' };
+      }
+
+      console.log(`🖨️ SENDING TO PRINTER ➔ ${targetPrinter.name} (IP: ${targetPrinter.ipAddress || 'Windows Driver'})...`);
 
       const isDuplex = doc.duplex !== undefined ? doc.duplex : true;
       await printDocument(pdfBuffer, targetPrinter, doc.originalName, isDuplex);
@@ -168,30 +193,40 @@ async function printDocument(pdfBuffer, targetPrinter, docName, duplex = true) {
 
   let printed = false;
 
-  // 1. Try Windows Spooler if a matching Windows printer exists
+  // 1. Try Windows Spooler first (100% reliable hardware driver rendering on Windows)
   try {
     const ptp = require('pdf-to-printer');
     const winPrinters = await ptp.getPrinters().catch(() => []);
-    const match = winPrinters.find(p => 
+    
+    // Find matching Windows printer or physical printer
+    let selectedWinPrinter = winPrinters.find(p => 
       p.name?.toLowerCase().includes(targetPrinter.name?.toLowerCase()) ||
       p.deviceId?.toLowerCase().includes(targetPrinter.name?.toLowerCase())
     );
 
-    if (match) {
-      console.log(`🖨️ [Windows Spooler] Printing to installed Windows driver: ${match.name} (Duplex: ${duplex ? 'ON' : 'OFF'})...`);
+    // If no exact name match, look for any non-virtual physical printer (Canon, HP, Xerox, Epson, Brother)
+    if (!selectedWinPrinter) {
+      selectedWinPrinter = winPrinters.find(p => {
+        const n = p.name.toLowerCase();
+        return !n.includes('pdf') && !n.includes('onenote') && !n.includes('xps') && !n.includes('fax');
+      });
+    }
+
+    if (selectedWinPrinter) {
+      console.log(`🖨️ [Windows Spooler] Printing to driver "${selectedWinPrinter.name}" (Duplex: ${duplex ? 'ON' : 'OFF'})...`);
       await ptp.print(tempPdfPath, {
-        printer: match.name,
+        printer: selectedWinPrinter.name,
         duplex: duplex ? 'duplex' : 'simplex'
       });
-      console.log(`🎉 SUCCESS! Paper printed via Windows Driver: ${match.name}!`);
+      console.log(`🎉 SUCCESS! Paper dispatched to physical printer via Windows Driver: ${selectedWinPrinter.name}!`);
       printed = true;
     }
   } catch (winErr) {
     console.warn(`⚠️ Windows Spooler note: ${winErr.message}`);
   }
 
-  // 2. If not printed via Windows driver, try direct network protocols (IPP & PJL-RAW)
-  if (!printed) {
+  // 2. Direct Network Protocols (IPP & PJL-RAW socket)
+  if (!printed && targetPrinter.ipAddress) {
     if (targetPrinter.protocol === 'ipp' || targetPrinter.port === 631) {
       console.log(`🖨️ [IPP Protocol] Sending print job to ${targetPrinter.ipAddress}:631/ipp/print...`);
       try {
@@ -209,8 +244,11 @@ async function printDocument(pdfBuffer, targetPrinter, docName, duplex = true) {
     }
   }
 
-  // Cleanup temp file
-  try { if (fs.existsSync(tempPdfPath)) fs.unlinkSync(tempPdfPath); } catch (e) {}
+  // Cleanup temp file after 10 seconds to allow spooler to finish reading
+  setTimeout(() => {
+    try { if (fs.existsSync(tempPdfPath)) fs.unlinkSync(tempPdfPath); } catch (e) {}
+  }, 10000);
+
   return printed;
 }
 
