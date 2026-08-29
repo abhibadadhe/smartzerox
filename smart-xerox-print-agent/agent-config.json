@@ -1,7 +1,7 @@
 {
   "serverUrl": "https://api.pratibimb.online",
   "shopEmail": "pratibimb@example.com",
-  "shopPassword": "password123",
+  "shopPassword": "Password@123",
   "printers": [
     {
       "name": "printer 1",
