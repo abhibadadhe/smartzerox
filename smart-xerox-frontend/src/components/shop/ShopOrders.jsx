@@ -287,7 +287,7 @@ const ShopOrders = ({ handleReject, triggerPrint, handleVerifyPickup, handleUpda
                   <td className="p-4">
                     <div className="text-sm font-medium text-slate-800">{order.user?.phone || order.user?.name || 'Guest'}</div>
                   </td>
-                  <td className="p-4 text-sm text-slate-600 font-medium">{order.assignedPrinterName || '—'}</td>
+                  <td className="p-4 text-sm text-slate-700 font-medium">{order.assignedPrinterName || order.assignedPrinter?.name || order.assignedPrinter?.displayName || (order.documents?.some(d => d.printingRanges?.some(r => r.colorMode === 'color')) ? 'HP Color' : 'Canon B&W')}</td>
                   <td className="p-4 text-sm text-slate-600">{order.printJob?.totalPages || order.documents?.reduce((a, d) => {
                     if (d.printingRanges && d.printingRanges.length > 0) {
                       return a + d.printingRanges.reduce((s, r) => s + ((r.rangeEnd - r.rangeStart + 1) * (r.copies || 1)), 0);
@@ -310,7 +310,7 @@ const ShopOrders = ({ handleReject, triggerPrint, handleVerifyPickup, handleUpda
                           <Ban size={18} />
                         </button>
                       )}
-                      {['accepted', 'printing'].includes(order.status) && triggerPrint && (
+                      {['paid', 'queued', 'accepted', 'printing'].includes(order.status) && triggerPrint && (
                         <button
                           onClick={() => triggerPrint(order._id)}
                           className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all duration-200"
@@ -330,7 +330,7 @@ const ShopOrders = ({ handleReject, triggerPrint, handleVerifyPickup, handleUpda
                         </button>
                       )}
                       <div className="flex flex-col items-end gap-1.5">
-                        {['paid', 'accepted'].includes(order.status) && (
+                        {['paid', 'queued', 'accepted'].includes(order.status) && (
                           <button
                             onClick={() => triggerPrint ? triggerPrint(order._id) : setDetailsModal({ open: true, order })}
                             className="px-3.5 py-1.5 text-xs font-bold text-white sunrise-gradient rounded-xl shadow-md shadow-orange-500/20 hover:scale-105 transition-all flex items-center gap-1.5 shrink-0"
