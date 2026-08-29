@@ -150,6 +150,14 @@ async function handlePrintJob(orderData) {
       const copies = doc.printingRanges?.[0]?.copies || 1;
       const paperSize = doc.printingOptions?.paperSize || 'A4';
       
+      let pageRangeStr = undefined;
+      if (doc.printingRanges && doc.printingRanges.length > 0) {
+        const r = doc.printingRanges[0];
+        if (r.rangeStart && r.rangeEnd) {
+          pageRangeStr = `${r.rangeStart}-${r.rangeEnd}`;
+        }
+      }
+      
       let targetPrinter = null;
       if (order.assignedPrinter) {
         const assignedId = typeof order.assignedPrinter === 'object' ? order.assignedPrinter._id : order.assignedPrinter;
@@ -175,7 +183,8 @@ async function handlePrintJob(orderData) {
         duplex: isDoubleSided,
         monochrome: !isColor,
         paperSize: paperSize,
-        copies: copies
+        copies: copies,
+        pages: pageRangeStr
       });
     }
 
@@ -227,14 +236,16 @@ async function printDocument(pdfBuffer, targetPrinter, docName, options = {}) {
 
     if (selectedWinPrinter) {
       console.log(`🖨️ [Windows Spooler] Printing to driver "${selectedWinPrinter.name}" | Side: ${isDuplex ? 'duplexlong (Back-to-Back)' : 'simplex (Single-Sided)'} | Paper: ${paperSize}...`);
-      await ptp.print(tempPdfPath, {
+      const printOptions = {
         printer: selectedWinPrinter.name,
         side: isDuplex ? 'duplexlong' : 'simplex',
         monochrome: monochrome,
         paperSize: paperSize,
         scale: 'fit',
         copies: copies
-      });
+      };
+      if (options.pages) printOptions.pages = options.pages;
+      await ptp.print(tempPdfPath, printOptions);
       console.log(`🎉 SUCCESS! Paper dispatched to physical printer via Windows Driver: ${selectedWinPrinter.name}!`);
       printed = true;
     }
