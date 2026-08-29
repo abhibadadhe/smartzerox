@@ -702,33 +702,6 @@ exports.addManualPrinter = asyncHandler(async (req, res) => {
   });
 });
 
-  // Auto-detect supported document formats (non-blocking)
-  setImmediate(async () => {
-    try {
-      const result = await detectAndStoreFormats(printer);
-      if (result) {
-        const updatedPrinter = await Printer.findById(printer._id);
-        emitToShop(shop._id.toString(), 'printer:status_update', { printers: [updatedPrinter] });
-        logger.info(`[Printer] Auto-detected formats for ${name}: ${result.formats.join(', ')}`);
-        if (!result.formats.includes('application/pdf')) {
-          logger.warn(`⚠️ [Printer] ${name} does NOT support PDF! Enable PDL→PDF on the printer.`);
-        }
-      }
-    } catch (err) {
-      logger.warn(`[Printer] Format detection failed for ${name}: ${err.message}`);
-    }
-  });
-
-  const { emitToShop: emit } = require('../config/socket');
-  emit(shop._id.toString(), 'printer:status_update', { printers: [printer] });
-
-  res.status(201).json({
-    success: true,
-    message: 'Printer added successfully',
-    data: { printer }
-  });
-});
-
 // Update Printer IP Address
 exports.updatePrinterIp = asyncHandler(async (req, res) => {
   const { ipAddress } = req.body;
