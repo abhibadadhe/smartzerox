@@ -134,16 +134,22 @@ async function handlePrintJob(orderData) {
     }).catch(() => null);
     const shopPrinters = printersRes?.data?.data?.printers || printersRes?.data?.data || [];
 
-    for (const doc of (order.documents || [])) {
+        for (const doc of (order.documents || [])) {
       const fileUrl = doc.downloadUrl || doc.fileUrl || doc.url || doc.s3Url;
-      if (!fileUrl) continue;
+      if (!fileUrl) {
+        console.warn(`⚠️ No download URL found for: ${doc.originalName || 'document'}`);
+        continue;
+      }
 
       console.log(`⬇️ Downloading PDF: ${doc.originalName}...`);
       const pdfBuffer = await downloadFile(fileUrl);
 
-      const isColor = doc.printingRanges?.some(r => r.colorMode === 'color');
+      // Extract accurate customer print options from order
+      const isColor = doc.printingRanges ? doc.printingRanges.some(r => r.colorMode === 'color') : false;
+      const isDoubleSided = doc.printingRanges ? doc.printingRanges.some(r => r.sides === 'double' || r.side === 'double') : (doc.duplex !== false);
+      const copies = doc.printingRanges?.[0]?.copies || 1;
+      const paperSize = doc.printingOptions?.paperSize || 'A4';
       
-      // Resolve target printer dynamically from cloud order or live shop printers
       let targetPrinter = null;
       if (order.assignedPrinter) {
         const assignedId = typeof order.assignedPrinter === 'object' ? order.assignedPrinter._id : order.assignedPrinter;
@@ -163,10 +169,14 @@ async function handlePrintJob(orderData) {
         targetPrinter = { name: 'Default Printer', ipAddress: '192.168.1.80', port: 9100, protocol: 'raw' };
       }
 
-      console.log(`🖨️ SENDING TO PRINTER ➔ ${targetPrinter.name} (IP: ${targetPrinter.ipAddress || 'Windows Driver'})...`);
+      console.log(`🖨️ SENDING TO PRINTER ➔ ${targetPrinter.displayName || targetPrinter.name} (IP: ${targetPrinter.ipAddress || 'Windows Driver'}) | Duplex: ${isDoubleSided ? 'DOUBLE-SIDED (Back-to-Back)' : 'SINGLE-SIDED'} | Copies: ${copies}...`);
 
-      const isDuplex = doc.duplex !== undefined ? doc.duplex : true;
-      await printDocument(pdfBuffer, targetPrinter, doc.originalName, isDuplex);
+      await printDocument(pdfBuffer, targetPrinter, doc.originalName, {
+        duplex: isDoubleSided,
+        monochrome: !isColor,
+        paperSize: paperSize,
+        copies: copies
+      });
     }
 
     // 2. Mark order as READY for pickup on Dashboard (shows "Ready for Pickup")
@@ -185,7 +195,12 @@ function downloadFile(url) {
   return axios.get(url, { responseType: 'arraybuffer' }).then(res => Buffer.from(res.data));
 }
 
-async function printDocument(pdfBuffer, targetPrinter, docName, duplex = true) {
+async function printDocument(pdfBuffer, targetPrinter, docName, options = {}) {
+  const isDuplex = options.duplex !== undefined ? options.duplex : true;
+  const monochrome = options.monochrome !== undefined ? options.monochrome : true;
+  const paperSize = options.paperSize || 'A4';
+  const copies = options.copies || 1;
+
   const tempDir = path.join(__dirname, 'temp_print');
   if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
   const tempPdfPath = path.join(tempDir, `job_${Date.now()}_${Math.random().toString(36).substring(2, 6)}.pdf`);
@@ -193,18 +208,16 @@ async function printDocument(pdfBuffer, targetPrinter, docName, duplex = true) {
 
   let printed = false;
 
-  // 1. Try Windows Spooler first (100% reliable hardware driver rendering on Windows)
+  // 1. Try Windows Spooler (100% reliable hardware driver rendering on Windows)
   try {
     const ptp = require('pdf-to-printer');
     const winPrinters = await ptp.getPrinters().catch(() => []);
     
-    // Find matching Windows printer or physical printer
     let selectedWinPrinter = winPrinters.find(p => 
       p.name?.toLowerCase().includes(targetPrinter.name?.toLowerCase()) ||
       p.deviceId?.toLowerCase().includes(targetPrinter.name?.toLowerCase())
     );
 
-    // If no exact name match, look for any non-virtual physical printer (Canon, HP, Xerox, Epson, Brother)
     if (!selectedWinPrinter) {
       selectedWinPrinter = winPrinters.find(p => {
         const n = p.name.toLowerCase();
@@ -213,10 +226,14 @@ async function printDocument(pdfBuffer, targetPrinter, docName, duplex = true) {
     }
 
     if (selectedWinPrinter) {
-      console.log(`🖨️ [Windows Spooler] Printing to driver "${selectedWinPrinter.name}" (Duplex: ${duplex ? 'ON' : 'OFF'})...`);
+      console.log(`🖨️ [Windows Spooler] Printing to driver "${selectedWinPrinter.name}" | Side: ${isDuplex ? 'duplexlong (Back-to-Back)' : 'simplex (Single-Sided)'} | Paper: ${paperSize}...`);
       await ptp.print(tempPdfPath, {
         printer: selectedWinPrinter.name,
-        duplex: duplex ? 'duplex' : 'simplex'
+        side: isDuplex ? 'duplexlong' : 'simplex',
+        monochrome: monochrome,
+        paperSize: paperSize,
+        scale: 'fit',
+        copies: copies
       });
       console.log(`🎉 SUCCESS! Paper dispatched to physical printer via Windows Driver: ${selectedWinPrinter.name}!`);
       printed = true;
@@ -230,24 +247,23 @@ async function printDocument(pdfBuffer, targetPrinter, docName, duplex = true) {
     if (targetPrinter.protocol === 'ipp' || targetPrinter.port === 631) {
       console.log(`🖨️ [IPP Protocol] Sending print job to ${targetPrinter.ipAddress}:631/ipp/print...`);
       try {
-        await printViaIpp(pdfBuffer, targetPrinter, docName, duplex);
+        await printViaIpp(pdfBuffer, targetPrinter, docName, isDuplex, copies);
         printed = true;
       } catch (ippErr) {
         console.warn(`⚠️ IPP print failed (${ippErr.message}) -> Falling back to PJL-RAW Port 9100...`);
-        await printViaPjlRawSocket(pdfBuffer, targetPrinter, docName, duplex);
+        await printViaPjlRawSocket(pdfBuffer, targetPrinter, docName, isDuplex);
         printed = true;
       }
     } else {
       console.log(`🖨️ [PJL-RAW Protocol] Streaming PDF to ${targetPrinter.ipAddress}:${targetPrinter.port || 9100} with PJL headers...`);
-      await printViaPjlRawSocket(pdfBuffer, targetPrinter, docName, duplex);
+      await printViaPjlRawSocket(pdfBuffer, targetPrinter, docName, isDuplex);
       printed = true;
     }
   }
 
-  // Cleanup temp file after 10 seconds to allow spooler to finish reading
   setTimeout(() => {
     try { if (fs.existsSync(tempPdfPath)) fs.unlinkSync(tempPdfPath); } catch (e) {}
-  }, 10000);
+  }, 15000);
 
   return printed;
 }
