@@ -608,20 +608,10 @@ const UserDashboard = () => {
       const options = {
         key: razorpay.key,
         amount: razorpay.amount,
-        currency: razorpay.currency,
+        currency: razorpay.currency || 'INR',
         name: 'Smart Xerox',
         description: `${documents.length} document(s) printing`,
         order_id: razorpay.orderId,
-        config: {
-          display: {
-            blocks: {
-              upi_id: { name: 'Enter UPI ID', instruments: [{ method: 'upi', protocols: ['vpa'] }] },
-              upi_apps: { name: 'UPI Apps / QR', instruments: [{ method: 'upi', protocols: ['intent', 'qr'] }] },
-            },
-            sequence: ['block.upi_id', 'block.upi_apps'],
-            preferences: { show_default_blocks: true },
-          },
-        },
         handler: async (response) => {
           try {
             await paymentAPI.verify({
