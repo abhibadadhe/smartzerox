@@ -57,7 +57,7 @@ function connectWebSocket() {
     console.log('🟢 LIVE DIRECT PRINT ENGINE ACTIVE! Paper will feed out automatically when order is placed.');
   });
 
-  socket.on('order:accepted', handlePrintJob);
+  // socket.on('order:accepted', handlePrintJob); // deduplicated
   // ─── Real-Time Hardware Detection Listener ────────────────────────────────
   socket.on('printer:detect_lan', async (data) => {
     const { requestId, ipAddress, port = 631, printerId } = data;
@@ -99,9 +99,21 @@ function connectWebSocket() {
   });
 }
 
+const processedJobs = new Set();
+
 async function handlePrintJob(orderData) {
+  const orderId = (orderData.orderId || orderData._id)?.toString();
+  if (!orderId) return;
+
+  // Deduplication: prevent processing the exact same order multiple times concurrently
+  if (processedJobs.has(orderId)) {
+    return;
+  }
+  processedJobs.add(orderId);
+  // Auto-expire after 2 minutes
+  setTimeout(() => processedJobs.delete(orderId), 120000);
+
   try {
-    const orderId = orderData.orderId || orderData._id;
     console.log(`\n⚡ INCOMING ORDER #${orderData.orderNumber || orderId} RECEIVED!`);
 
     // 1. Notify Cloud Dashboard that printing has started (shows "Printing in Progress...")
