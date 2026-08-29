@@ -601,7 +601,6 @@ exports.resetAllPrinters = asyncHandler(async (req, res) => {
 // Add a new manual printer by IP
 exports.addManualPrinter = asyncHandler(async (req, res) => {
   const { name, type, ipAddress } = req.body;
-  // Note: we must require Shop directly if it's not imported. It is imported at the top of printer.controller.js
   const shop = await Shop.findOne({ owner: req.user.id }).lean();
   
   if (!shop) throw new AppError('Shop not found', 404);
@@ -609,19 +608,99 @@ exports.addManualPrinter = asyncHandler(async (req, res) => {
     throw new AppError('Name, type, and IP address are required', 400);
   }
 
-  // Create a unique systemName based on name and timestamp
+  const cleanIp = ipAddress.trim();
   const systemName = `Manual_${name.replace(/\s+/g, '_')}_${Date.now()}`;
+
+  // Default initial state: offline & disabled until verified by probe
+  let initialStatus = 'offline';
+  let initialEnabled = false;
+  let initialFormats = [];
+  let initialDuplex = false;
+  let initialPort = 9100;
+  let initialPreferred = null;
+  let initialModel = name.trim();
+
+  // Try real-time LAN probe via connected Desktop Agent
+  try {
+    const { getIO } = require('../config/socket');
+    const io = getIO();
+    const shopRoom = `shop:${shop._id.toString()}`;
+    const roomSockets = io.sockets.adapter.rooms.get(shopRoom);
+
+    if (roomSockets && roomSockets.size > 0) {
+      const requestId = `req_add_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+
+      const probePromise = new Promise((resolve) => {
+        const timer = setTimeout(() => resolve(null), 3000);
+
+        const onResult = (socket) => {
+          const handler = (data) => {
+            if (data && data.requestId === requestId) {
+              clearTimeout(timer);
+              socket.off('printer:detect_lan_result', handler);
+              resolve(data);
+            }
+          };
+          socket.on('printer:detect_lan_result', handler);
+        };
+
+        for (const socketId of roomSockets) {
+          const s = io.sockets.sockets.get(socketId);
+          if (s) onResult(s);
+        }
+
+        io.to(shopRoom).emit('printer:detect_lan', {
+          requestId,
+          ipAddress: cleanIp,
+          port: 9100
+        });
+      });
+
+      const probeResult = await probePromise;
+      if (probeResult && probeResult.isOnline) {
+        initialStatus = 'running';
+        initialEnabled = true;
+        initialFormats = probeResult.formats || ['application/pdf', 'application/postscript', 'application/octet-stream'];
+        initialPreferred = probeResult.preferredFormat || 'application/pdf';
+        initialDuplex = probeResult.supportsDuplex !== undefined ? probeResult.supportsDuplex : true;
+        initialPort = probeResult.activePort || 9100;
+        if (probeResult.model) initialModel = probeResult.model;
+        logger.info(`✅ [Add Printer] Real-time probe SUCCESS for ${cleanIp}: Online / PDF / Duplex!`);
+      } else {
+        logger.info(`⚠️ [Add Printer] Real-time probe reported unreachable for ${cleanIp} -> Marked Offline`);
+      }
+    }
+  } catch (err) {
+    logger.warn(`[Add Printer] Probe coordination error: ${err.message}`);
+  }
 
   const printer = await Printer.create({
     shop: shop._id,
     name: name.trim(),
-    displayName: name.trim(),
+    displayName: initialModel,
     systemName,
-    ipAddress: ipAddress.trim(),
+    ipAddress: cleanIp,
+    port: initialPort,
     type,
-    status: 'running', // Assume online by default
-    isEnabled: true
+    status: initialStatus,
+    isEnabled: initialEnabled,
+    supportedFormats: initialFormats,
+    preferredFormat: initialPreferred,
+    supportsDuplex: initialDuplex,
+    formatDetectedAt: initialStatus === 'running' ? new Date() : null
   });
+
+  const { emitToShop: emit } = require('../config/socket');
+  emit(shop._id.toString(), 'printer:status_update', { printers: [printer] });
+
+  res.status(201).json({
+    success: true,
+    message: initialStatus === 'running'
+      ? `✅ Printer added & verified ONLINE (PDF: ✓, Duplex: ${initialDuplex ? '✓' : '✗'})`
+      : '⚠️ Printer added, but unreachable on local network (marked Offline).',
+    data: { printer }
+  });
+});
 
   // Auto-detect supported document formats (non-blocking)
   setImmediate(async () => {
