@@ -109,24 +109,44 @@ const ShopDashboard = () => {
 
   const triggerPrint = async (orderId) => {
     try {
-      toast.loading('🖨️ Opening print document...', { id: 'print-toast' });
+      toast.loading('🖨️ Connecting to printer...', { id: 'print-toast' });
       const res = await orderAPI.getById(orderId);
       const order = res.data?.data?.order || res.data?.data || res.data?.order;
       
-      // Dispatch background print signal
+      // 1. Dispatch background print signal (for Desktop Agent if active)
       orderAPI.triggerPrint(orderId).catch(() => {});
 
+      // 2. Direct browser fallback (if Agent is offline)
       if (order && order.documents && order.documents.length > 0) {
         order.documents.forEach((doc, idx) => {
-          const fileUrl = doc.fileUrl || doc.url;
+          const fileUrl = doc.downloadUrl || doc.fileUrl || doc.url;
           if (fileUrl) {
             setTimeout(() => {
-              const win = window.open(fileUrl, '_blank');
-              if (win) win.focus();
+              const iframe = document.createElement('iframe');
+              iframe.style.position = 'fixed';
+              iframe.style.right = '0';
+              iframe.style.bottom = '0';
+              iframe.style.width = '0';
+              iframe.style.height = '0';
+              iframe.style.border = '0';
+              iframe.src = fileUrl;
+              document.body.appendChild(iframe);
+              iframe.onload = () => {
+                try {
+                  iframe.contentWindow.focus();
+                  iframe.contentWindow.print();
+                } catch (e) {
+                  const win = window.open(fileUrl, '_blank');
+                  if (win) win.focus();
+                }
+                setTimeout(() => {
+                  try { document.body.removeChild(iframe); } catch (e) {}
+                }, 60000);
+              };
             }, idx * 300);
           }
         });
-        toast.success('✅ Document opened for direct printing!', { id: 'print-toast' });
+        toast.success('✅ Direct print triggered on available printer!', { id: 'print-toast' });
       } else {
         toast.success('🖨️ Print command sent to printer!', { id: 'print-toast' });
       }
