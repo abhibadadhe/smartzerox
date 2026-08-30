@@ -140,6 +140,102 @@ function connectWebSocket(shopId) {
 }
 
 // In-memory deduplication tracker (prevents duplicate triggers within 2 minutes)
+const { PDFDocument, PageSizes } = require('pdf-lib');
+const { execSync } = require('child_process');
+
+/**
+ * Converts image buffer (JPG, PNG, WEBP, BMP) to a standard A4 PDF buffer in memory
+ */
+async function convertImageToPdfBuffer(imageBuffer, filename) {
+  const ext = path.extname(filename || '').toLowerCase();
+  const pdfDoc = await PDFDocument.create();
+  
+  let image;
+  if (ext === '.png') {
+    image = await pdfDoc.embedPng(imageBuffer);
+  } else {
+    // JPG, JPEG, and fallbacks
+    try {
+      image = await pdfDoc.embedJpg(imageBuffer);
+    } catch {
+      image = await pdfDoc.embedPng(imageBuffer);
+    }
+  }
+
+  const { width: imgW, height: imgH } = image.scale(1);
+  const isLandscape = imgW > imgH;
+  const pageSize = isLandscape ? [PageSizes.A4[1], PageSizes.A4[0]] : PageSizes.A4;
+  const page = pdfDoc.addPage(pageSize);
+  const { width: pageW, height: pageH } = page.getSize();
+
+  // Margins (20 points ~ 7mm)
+  const margin = 20;
+  const maxWidth = pageW - margin * 2;
+  const maxHeight = pageH - margin * 2;
+  const scale = Math.min(maxWidth / imgW, maxHeight / imgH, 1);
+
+  const finalW = imgW * scale;
+  const finalH = imgH * scale;
+  const posX = (pageW - finalW) / 2;
+  const posY = (pageH - finalH) / 2;
+
+  page.drawImage(image, {
+    x: posX,
+    y: posY,
+    width: finalW,
+    height: finalH,
+  });
+
+  const pdfBytes = await pdfDoc.save();
+  return Buffer.from(pdfBytes);
+}
+
+/**
+ * Converts PPT, PPTX, DOC, DOCX files to PDF using native Windows Office or LibreOffice
+ */
+function convertOfficeToPdf(inputFilePath, outputPdfPath) {
+  const ext = path.extname(inputFilePath).toLowerCase();
+  
+  // 1. Try LibreOffice CLI if available
+  try {
+    const outDir = path.dirname(outputPdfPath);
+    execSync(`soffice --headless --convert-to pdf "${inputFilePath}" --outdir "${outDir}"`, { timeout: 30000, stdio: 'ignore' });
+    const expectedName = path.basename(inputFilePath, ext) + '.pdf';
+    const generatedPath = path.join(outDir, expectedName);
+    if (fs.existsSync(generatedPath)) {
+      if (generatedPath !== outputPdfPath) fs.renameSync(generatedPath, outputPdfPath);
+      return true;
+    }
+  } catch (e) {}
+
+  // 2. Try PowerShell MS Office COM automation on Windows
+  try {
+    if (ext.startsWith('.ppt')) {
+      const psScript = `
+        $ppt = New-Object -ComObject PowerPoint.Application
+        $presentation = $ppt.Presentations.Open("${inputFilePath.replace(/\\/g, '\\\\')}", [Microsoft.Office.Core.MsoTriState]::msoFalse, [Microsoft.Office.Core.MsoTriState]::msoFalse, [Microsoft.Office.Core.MsoTriState]::msoFalse)
+        $presentation.SaveAs("${outputPdfPath.replace(/\\/g, '\\\\')}", 32)
+        $presentation.Close()
+        $ppt.Quit()
+      `;
+      execSync(`powershell -NoProfile -NonInteractive -Command "${psScript.replace(/\n/g, ' ')}"`, { timeout: 30000, stdio: 'ignore' });
+      if (fs.existsSync(outputPdfPath)) return true;
+    } else if (ext.startsWith('.doc')) {
+      const psScript = `
+        $word = New-Object -ComObject Word.Application
+        $doc = $word.Documents.Open("${inputFilePath.replace(/\\/g, '\\\\')}")
+        $doc.SaveAs([ref]"${outputPdfPath.replace(/\\/g, '\\\\')}", [ref]17)
+        $doc.Close()
+        $word.Quit()
+      `;
+      execSync(`powershell -NoProfile -NonInteractive -Command "${psScript.replace(/\n/g, ' ')}"`, { timeout: 30000, stdio: 'ignore' });
+      if (fs.existsSync(outputPdfPath)) return true;
+    }
+  } catch (e) {}
+
+  return false;
+}
+
 const processedJobs = new Set();
 
 async function handlePrintJob(orderData) {
@@ -186,8 +282,28 @@ async function handlePrintJob(orderData) {
         continue;
       }
 
-      console.log(`⬇️ Downloading PDF Stream: ${doc.originalName}...`);
-      const pdfBuffer = await downloadFile(fileUrl);
+      console.log(`⬇️ Downloading document: ${doc.originalName}...`);
+      let pdfBuffer = await downloadFile(fileUrl);
+      const ext = path.extname(doc.originalName || '').toLowerCase();
+
+      // Automatically convert Images/Photos (JPG, PNG, WEBP, BMP) to PDF in memory
+      if (['.jpg', '.jpeg', '.png', '.webp', '.bmp', '.tiff'].includes(ext)) {
+        console.log(`🖼️ [Auto-Convert Photo] Converting image ${doc.originalName} to standard print-ready A4 PDF...`);
+        pdfBuffer = await convertImageToPdfBuffer(pdfBuffer, doc.originalName);
+      } else if (['.ppt', '.pptx', '.doc', '.docx'].includes(ext)) {
+        console.log(`📊 [Auto-Convert Office] Converting presentation/document ${doc.originalName} to PDF...`);
+        const tempOfficeDir = path.join(__dirname, 'temp_print');
+        if (!fs.existsSync(tempOfficeDir)) fs.mkdirSync(tempOfficeDir, { recursive: true });
+        const tempOfficeFile = path.join(tempOfficeDir, `raw_${Date.now()}_${doc.originalName}`);
+        const tempConvertedPdf = path.join(tempOfficeDir, `conv_${Date.now()}.pdf`);
+        fs.writeFileSync(tempOfficeFile, pdfBuffer);
+        const converted = convertOfficeToPdf(tempOfficeFile, tempConvertedPdf);
+        if (converted && fs.existsSync(tempConvertedPdf)) {
+          pdfBuffer = fs.readFileSync(tempConvertedPdf);
+          try { fs.unlinkSync(tempConvertedPdf); } catch (e) {}
+        }
+        try { fs.unlinkSync(tempOfficeFile); } catch (e) {}
+      }
 
       // Support multi-range printing (e.g. Range 1 = Color, Range 2 = B&W)
       const ranges = (doc.printingRanges && doc.printingRanges.length > 0)
