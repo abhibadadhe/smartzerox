@@ -265,6 +265,43 @@ function convertOfficeToPdf(inputFilePath, outputPdfPath) {
   return false;
 }
 
+
+/**
+ * Stamps the Order Number (e.g., "#4") vertically in the bottom-left margin
+ * so the shopkeeper and student can easily identify and separate orders!
+ */
+async function stampOrderNumberOnPdf(pdfBuffer, orderNumber) {
+  if (!orderNumber) return pdfBuffer;
+  try {
+    const { PDFDocument, rgb, StandardFonts, degrees } = require('pdf-lib');
+    const pdfDoc = await PDFDocument.load(pdfBuffer, { ignoreEncryption: true });
+    const pages = pdfDoc.getPages();
+    if (pages.length === 0) return pdfBuffer;
+
+    const font = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+    const fontSize = 9;
+    const margin = 18; // ~6.5mm clears hardware margin
+    const stampText = `#${orderNumber}`;
+
+    // Stamp on every page margin vertically (rotated 90 deg)
+    for (const page of pages) {
+      page.drawText(stampText, {
+        x: margin + fontSize,
+        y: margin,
+        size: fontSize,
+        font,
+        color: rgb(0.3, 0.3, 0.3),
+        opacity: 0.7,
+        rotate: degrees(90),
+      });
+    }
+
+    return Buffer.from(await pdfDoc.save());
+  } catch (err) {
+    return pdfBuffer; // fallback to original
+  }
+}
+
 const processedJobs = new Set();
 
 async function handlePrintJob(orderData) {
@@ -381,10 +418,13 @@ async function handlePrintJob(orderData) {
         const sideStr = isDoubleSided ? '📖 DOUBLE-SIDED (Back-to-Back)' : '📄 SINGLE-SIDED';
         const pagesStr = pageRangeStr ? `Pages ${pageRangeStr}` : 'All Pages';
 
+        // Stamp order number on margin for easy identification
+        const stampedPdfBuffer = await stampOrderNumberOnPdf(pdfBuffer, order.orderNumber || orderData.orderNumber);
+        
         console.log(`\n🖨️ [Job ${rIdx + 1}/${ranges.length}] ➔ ${targetPrinter.displayName || targetPrinter.name} (${targetPrinter.ipAddress || 'Windows Driver'})`);
         console.log(`   ⚙️ Config: ${modeStr} | ${sideStr} | ${pagesStr} | Copies: ${copies} | Paper: ${paperSize}`);
 
-        await printDocument(pdfBuffer, targetPrinter, doc.originalName, {
+        await printDocument(stampedPdfBuffer, targetPrinter, doc.originalName, {
           duplex: isDoubleSided,
           monochrome: !isColor,
           paperSize: paperSize,
