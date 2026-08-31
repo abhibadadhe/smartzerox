@@ -64,6 +64,36 @@ async function transitionToReady(order, userId) {
 
   logger.info(`Order ${order.orderNumber} → READY. OTP: ${pickupCode}`);
 
+  // ── Release Printer Load & Queue Count ──────────────────────────────────
+  if (order.assignedPrinter) {
+    try {
+      const Printer = require('../models/Printer');
+      const totalPages = (order.documents || []).reduce((acc, d) => {
+        if (d.printingRanges && d.printingRanges.length > 0) {
+          return acc + d.printingRanges.reduce((sum, r) => sum + ((r.rangeEnd - r.rangeStart + 1) * (r.copies || 1)), 0);
+        }
+        return acc + (d.detectedPages || 1);
+      }, 0) || 1;
+
+      const p = await Printer.findById(order.assignedPrinter);
+      if (p) {
+        p.currentLoad = Math.max(0, (p.currentLoad || 0) - totalPages);
+        p.jobsInQueue = Math.max(0, (p.jobsInQueue || 0) - 1);
+        await p.save();
+
+        const { getIO } = require('../config/socket');
+        try {
+          const io = getIO();
+          const shopId = (order.shop?._id || order.shop).toString();
+          io.to(`shop:${shopId}`).emit('printer:status_update', { printers: [p] });
+        } catch (sockErr) {}
+      }
+    } catch (loadErr) {
+      logger.warn(`Failed to decrement printer load: ${loadErr.message}`);
+    }
+  }
+
+
   // ── Notify user (in-app notification) ──────────────────────────────────────
   // Only notify for parent order or non-divided orders (not for each sub-order)
   if (!order.parentOrder) {
