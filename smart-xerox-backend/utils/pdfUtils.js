@@ -4,10 +4,7 @@ const pdfParse = require('pdf-parse');
 const logger = require('../config/logger');
 
 /**
- * Multi-Engine PDF Page Counter:
- * 1. pdf-lib (Fastest, handles modern object streams and encrypted xrefs)
- * 2. pdf-parse (Standard fallback)
- * 3. Binary regex scanner (/Type /Page and /Count N)
+ * Multi-Engine PDF Page Counter
  */
 const countPDFPagesFromBuffer = async (buffer) => {
   if (!buffer || buffer.length === 0) return 0;
@@ -47,6 +44,54 @@ const countPDFPagesFromBuffer = async (buffer) => {
   return 0;
 };
 
+/**
+ * Auto-detect slide count from PPTX / PPT files
+ */
+const countPresentationSlides = (buffer) => {
+  if (!buffer || buffer.length === 0) return 0;
+  try {
+    const str = buffer.toString('latin1');
+
+    // Method 1: Check docProps/app.xml <Slides>N</Slides>
+    const slidesMatch = str.match(/<Slides>(\d+)<\/Slides>/i);
+    if (slidesMatch && slidesMatch[1]) {
+      const n = parseInt(slidesMatch[1], 10);
+      if (n > 0 && n < 5000) return n;
+    }
+
+    // Method 2: Count ppt/slides/slideN.xml in the zip directory
+    const slideEntries = str.match(/ppt\/slides\/slide\d+\.xml/gi);
+    if (slideEntries && slideEntries.length > 0) {
+      const unique = new Set(slideEntries.map(s => s.toLowerCase()));
+      return unique.size;
+    }
+
+    // Method 3: Legacy .ppt slide header scan
+    const legacyMatches = str.match(/slideShowSlideInfoAtom/gi);
+    if (legacyMatches && legacyMatches.length > 0) {
+      return legacyMatches.length;
+    }
+  } catch (e) {}
+
+  return 0;
+};
+
+/**
+ * Auto-detect page count from Word DOCX files
+ */
+const countWordPages = (buffer) => {
+  if (!buffer || buffer.length === 0) return 0;
+  try {
+    const str = buffer.toString('latin1');
+    const pagesMatch = str.match(/<Pages>(\d+)<\/Pages>/i);
+    if (pagesMatch && pagesMatch[1]) {
+      const n = parseInt(pagesMatch[1], 10);
+      if (n > 0 && n < 5000) return n;
+    }
+  } catch (e) {}
+  return 0;
+};
+
 const countFilePages = async (file) => {
   let mime = (file.mimetype || '').toLowerCase();
   const ext = path.extname(file.originalname || '').toLowerCase();
@@ -62,21 +107,34 @@ const countFilePages = async (file) => {
     else if (ext === '.ppt')                 mime = 'application/vnd.ms-powerpoint';
   }
 
-  // Images are always 1 page
+  // 1. Images are always 1 page
   if (mime.startsWith('image/') || ['.jpg', '.jpeg', '.png', '.webp', '.bmp', '.tiff'].includes(ext)) {
     return 1;
   }
 
-  // PDF
+  // 2. PDF Documents
   if (mime === 'application/pdf' || ext === '.pdf') {
     if (file.buffer) return countPDFPagesFromBuffer(file.buffer);
     logger.warn(`No buffer available for ${file.originalname} — page count skipped`);
     return 0;
   }
 
-  // DOC/DOCX / PPT/PPTX
-  if (['.docx', '.doc', '.pptx', '.ppt', '.pptm', '.ppsx', '.odp'].includes(ext)) {
-    return 0; // Manual entry / auto-converted on print
+  // 3. PPT / PPTX Presentations
+  if (['.pptx', '.ppt', '.pptm', '.ppsx', '.odp'].includes(ext)) {
+    if (file.buffer) {
+      const slideCount = countPresentationSlides(file.buffer);
+      if (slideCount > 0) return slideCount;
+    }
+    return 0;
+  }
+
+  // 4. Word DOCX Documents
+  if (['.docx', '.doc'].includes(ext)) {
+    if (file.buffer) {
+      const wordPageCount = countWordPages(file.buffer);
+      if (wordPageCount > 0) return wordPageCount;
+    }
+    return 0;
   }
 
   return 0;
@@ -110,4 +168,4 @@ const getPrintablePageCount = (detectedPages, pageRange) => {
   return pages.length;
 };
 
-module.exports = { countFilePages, parsePageRange, getPrintablePageCount, countPDFPagesFromBuffer };
+module.exports = { countFilePages, parsePageRange, getPrintablePageCount, countPDFPagesFromBuffer, countPresentationSlides };

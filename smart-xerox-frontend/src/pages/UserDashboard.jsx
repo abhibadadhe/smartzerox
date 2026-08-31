@@ -196,9 +196,11 @@ const UserDashboard = () => {
 
   // Auto-upload file when selected
   
-  const detectClientPages = async (file) => {
+    const detectClientPages = async (file) => {
     const ext = file.name.toLowerCase();
     if (/\.(jpg|jpeg|png|webp|bmp)$/.test(ext)) return 1;
+    
+    // PDF detection
     if (/\.pdf$/.test(ext)) {
       try {
         const text = await file.slice(0, 500000).text();
@@ -211,6 +213,35 @@ const UserDashboard = () => {
         }
       } catch (e) {}
     }
+
+    // PPT / PPTX presentation slide detection
+    if (/\.(pptx|ppt|pptm|ppsx|odp)$/.test(ext)) {
+      try {
+        const text = await file.text();
+        const slidesMatch = text.match(/<Slides>(\d+)<\/Slides>/i);
+        if (slidesMatch && slidesMatch[1]) {
+          const n = parseInt(slidesMatch[1], 10);
+          if (n > 0 && n < 5000) return n;
+        }
+        const slideEntries = text.match(/ppt\/slides\/slide\d+\.xml/gi);
+        if (slideEntries && slideEntries.length > 0) {
+          return new Set(slideEntries.map(s => s.toLowerCase())).size;
+        }
+      } catch (e) {}
+    }
+
+    // DOCX Word page detection
+    if (/\.docx$/.test(ext)) {
+      try {
+        const text = await file.text();
+        const pagesMatch = text.match(/<Pages>(\d+)<\/Pages>/i);
+        if (pagesMatch && pagesMatch[1]) {
+          const n = parseInt(pagesMatch[1], 10);
+          if (n > 0 && n < 5000) return n;
+        }
+      } catch (e) {}
+    }
+
     return 0;
   };
 
