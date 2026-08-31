@@ -109,19 +109,19 @@ const ShopOrders = ({ handleReject, triggerPrint, handleVerifyPickup, handleUpda
   useEffect(() => {
     const s = getSocket();
     const refresh = () => fetchOrders(true);
-    
+
     const onPrintError = (data) => {
       toast.error(`❌ Print Error: ${data.error}`);
       refresh();
     };
-    
+
     s.on('order:status_update', refresh);
     s.on('order:new', refresh);
     s.on('print:started', refresh);
     s.on('print:completed', refresh);
     s.on('print:out_of_paper', refresh);
     s.on('print:error', onPrintError);
-    
+
     return () => {
       s.off('order:status_update', refresh);
       s.off('order:new', refresh);
@@ -132,18 +132,18 @@ const ShopOrders = ({ handleReject, triggerPrint, handleVerifyPickup, handleUpda
     };
   }, [fetchOrders]);
 
-  // Client-side search on fetched results (search is not in backend query)
+  // Client-side search on fetched results
   const displayOrders = searchQuery
     ? orders.filter(o => {
-        const q = searchQuery.toLowerCase();
-        return o.pickup?.pickupCode?.includes(q) ||
-               o.orderNumber?.toLowerCase().includes(q) ||
-               o.user?.name?.toLowerCase().includes(q) ||
-               o.user?.phone?.includes(q) ||
-               o.user?.email?.toLowerCase().includes(q) ||
-               o.assignedPrinterName?.toLowerCase().includes(q) ||
-               o.status?.toLowerCase().includes(q);
-      })
+      const q = searchQuery.toLowerCase();
+      return o.pickup?.pickupCode?.includes(q) ||
+        o.orderNumber?.toLowerCase().includes(q) ||
+        o.user?.name?.toLowerCase().includes(q) ||
+        o.user?.phone?.includes(q) ||
+        o.user?.email?.toLowerCase().includes(q) ||
+        o.assignedPrinterName?.toLowerCase().includes(q) ||
+        o.status?.toLowerCase().includes(q);
+    })
     : orders;
 
   // Stats for history tab
@@ -168,7 +168,7 @@ const ShopOrders = ({ handleReject, triggerPrint, handleVerifyPickup, handleUpda
       } catch { /* silent */ }
     };
     fetchLiveCount();
-  }, [orders]); // re-check when orders change
+  }, [orders]);
 
   const getStatusBadge = (status) => {
     const map = {
@@ -186,12 +186,6 @@ const ShopOrders = ({ handleReject, triggerPrint, handleVerifyPickup, handleUpda
     };
     const s = map[status] || map.pending;
     return <span className={`px-3 py-1.5 rounded-lg text-[11px] font-bold tracking-wide ${s.bg} ${s.text} border ${s.border} shadow-sm`}>{s.label}</span>;
-  };
-
-  // After action, refetch from DB
-  const wrapAction = (fn) => async (...args) => {
-    await fn(...args);
-    fetchOrders(true);
   };
 
   const totalPages = pagination.pages || 1;
@@ -276,8 +270,8 @@ const ShopOrders = ({ handleReject, triggerPrint, handleVerifyPickup, handleUpda
               ) : displayOrders.map(order => (
                 <tr key={order._id} className="border-b border-slate-100 hover:bg-gradient-to-r hover:from-orange-50/50 hover:to-amber-50/50 transition-all duration-200 group">
                   <td className="p-4">
-                    <div className="text-sm font-semibold text-slate-800">{new Date(order.createdAt).toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' })}</div>
-                    <div className="text-xs text-slate-500">({new Date(order.createdAt).toLocaleTimeString('en-US', { hour:'2-digit', minute:'2-digit', hour12:true }).toLowerCase()})</div>
+                    <div className="text-sm font-semibold text-slate-800">{new Date(order.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</div>
+                    <div className="text-xs text-slate-500">({new Date(order.createdAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }).toLowerCase()})</div>
                   </td>
                   <td className="p-4">
                     <span className="font-bold text-orange-600 group-hover:text-orange-700 transition-colors text-lg">
@@ -287,7 +281,11 @@ const ShopOrders = ({ handleReject, triggerPrint, handleVerifyPickup, handleUpda
                   <td className="p-4">
                     <div className="text-sm font-medium text-slate-800">{order.user?.phone || order.user?.name || 'Guest'}</div>
                   </td>
-                  <td className="p-4 text-sm text-slate-700 font-medium">{order.assignedPrinterName || order.assignedPrinter?.name || order.assignedPrinter?.displayName || (order.documents?.some(d => d.printingRanges?.some(r => r.colorMode === 'color')) ? 'HP Color' : 'Canon B&W')}</td>
+                  <td className="p-4 text-sm text-slate-700 font-medium">
+                    {order.assignedPrinterName || order.assignedPrinter?.name || order.assignedPrinter?.displayName || (
+                      <span className="text-slate-400 text-xs italic">No printer assigned</span>
+                    )}
+                  </td>
                   <td className="p-4 text-sm text-slate-600">{order.printJob?.totalPages || order.documents?.reduce((a, d) => {
                     if (d.printingRanges && d.printingRanges.length > 0) {
                       return a + d.printingRanges.reduce((s, r) => s + ((r.rangeEnd - r.rangeStart + 1) * (r.copies || 1)), 0);
@@ -330,16 +328,16 @@ const ShopOrders = ({ handleReject, triggerPrint, handleVerifyPickup, handleUpda
                         </button>
                       )}
                       <div className="flex flex-col items-end gap-1.5">
-                        {['paid', 'queued'].includes(order.status) && (
+                        {['paid', 'queued', 'accepted'].includes(order.status) && (
                           <button
                             onClick={() => triggerPrint ? triggerPrint(order._id) : setDetailsModal({ open: true, order })}
                             className="px-3.5 py-1.5 text-xs font-bold text-white sunrise-gradient rounded-xl shadow-md shadow-orange-500/20 hover:scale-105 transition-all flex items-center gap-1.5 shrink-0"
                           >
                             <Printer size={14} />
-                            Print Order
+                            {order.status === 'accepted' ? 'Process / Print' : 'Print Order'}
                           </button>
                         )}
-                        {['accepted', 'printing'].includes(order.status) && (
+                        {order.status === 'printing' && (
                           <span className="text-xs text-purple-700 font-bold px-3 py-1.5 bg-purple-50 rounded-xl border border-purple-200 animate-pulse flex items-center gap-1.5 shadow-sm">
                             <Printer size={14} className="animate-spin text-purple-600" />
                             Printing in Progress...
@@ -364,7 +362,7 @@ const ShopOrders = ({ handleReject, triggerPrint, handleVerifyPickup, handleUpda
           <div className="p-4 border-t border-slate-100 flex items-center justify-between bg-gradient-to-r from-slate-50 to-slate-100">
             <span className="text-xs text-slate-600 font-medium">Page {currentPage} of {totalPages} · {pagination.total} orders</span>
             <div className="flex items-center gap-2">
-              <button onClick={() => setCurrentPage(p => Math.max(1, p-1))} disabled={currentPage===1} className="p-2 rounded-lg bg-white text-slate-600 hover:bg-slate-100 disabled:opacity-40 transition-all duration-200 hover:scale-110"><ChevronLeft size={18} /></button>
+              <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1} className="p-2 rounded-lg bg-white text-slate-600 hover:bg-slate-100 disabled:opacity-40 transition-all duration-200 hover:scale-110"><ChevronLeft size={18} /></button>
               {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
                 let pageNum;
                 if (totalPages <= 5) pageNum = i + 1;
@@ -378,7 +376,7 @@ const ShopOrders = ({ handleReject, triggerPrint, handleVerifyPickup, handleUpda
               })}
               {totalPages > 5 && currentPage < totalPages - 2 && <span className="text-slate-400 text-sm px-1">...</span>}
               {totalPages > 5 && currentPage < totalPages - 2 && <button onClick={() => setCurrentPage(totalPages)} className={`w-9 h-9 rounded-lg text-sm font-bold bg-white text-slate-600 hover:bg-slate-100 transition-all duration-200 hover:scale-110`}>{totalPages}</button>}
-              <button onClick={() => setCurrentPage(p => Math.min(totalPages, p+1))} disabled={currentPage===totalPages} className="p-2 rounded-lg bg-white text-slate-600 hover:bg-slate-100 disabled:opacity-40 transition-all duration-200 hover:scale-110"><ChevronRight size={18} /></button>
+              <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages} className="p-2 rounded-lg bg-white text-slate-600 hover:bg-slate-100 disabled:opacity-40 transition-all duration-200 hover:scale-110"><ChevronRight size={18} /></button>
             </div>
           </div>
         )}
@@ -454,7 +452,7 @@ const ShopOrders = ({ handleReject, triggerPrint, handleVerifyPickup, handleUpda
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4" onClick={() => setRejectModal({ open: false, orderId: null, reason: '' })}>
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6" onClick={e => e.stopPropagation()}>
             <h3 className="text-lg font-bold text-slate-900 mb-4">Reject Order</h3>
-            <textarea value={rejectModal.reason} onChange={e => setRejectModal({...rejectModal, reason: e.target.value})} placeholder="Reason for rejection..." className="w-full border border-slate-200 rounded-xl p-3 text-sm min-h-[80px] focus:ring-2 focus:ring-orange-500 outline-none transition-all duration-300" />
+            <textarea value={rejectModal.reason} onChange={e => setRejectModal({ ...rejectModal, reason: e.target.value })} placeholder="Reason for rejection..." className="w-full border border-slate-200 rounded-xl p-3 text-sm min-h-[80px] focus:ring-2 focus:ring-orange-500 outline-none transition-all duration-300" />
             <div className="flex gap-3 mt-6">
               <button onClick={() => setRejectModal({ open: false, orderId: null, reason: '' })} className="flex-1 py-2.5 border border-slate-200 rounded-xl text-slate-600 font-medium hover:bg-slate-50 transition-all duration-300">Cancel</button>
               <button onClick={async () => { await handleReject(rejectModal.orderId, rejectModal.reason); setRejectModal({ open: false, orderId: null, reason: '' }); fetchOrders(true); }} disabled={!rejectModal.reason.trim()} className="flex-1 py-2.5 bg-gradient-to-r from-rose-500 to-rose-600 text-white rounded-xl font-bold hover:shadow-lg disabled:opacity-50 transition-all duration-300">Reject</button>
@@ -470,8 +468,8 @@ const ShopOrders = ({ handleReject, triggerPrint, handleVerifyPickup, handleUpda
             <h3 className="text-lg font-bold text-slate-900 mb-1">Verify Pickup</h3>
             <p className="text-sm text-slate-600 mb-6">Enter OTP for Order <span className="font-bold text-orange-600">#{otpModal.order.pickup?.pickupCode || otpModal.order.orderNumber}</span></p>
             <input type="text" autoFocus placeholder="Enter OTP" className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-orange-500 outline-none text-center text-3xl tracking-[0.35em] font-mono font-bold transition-all duration-300" maxLength={4} value={otpModal.otp}
-              onChange={e => setOtpModal({...otpModal, otp: e.target.value.replace(/\D/g,'')})}
-              onKeyDown={e => { if (e.key === 'Enter' && otpModal.otp) { handleVerifyPickup(otpModal.order._id, otpModal.otp); setOtpModal({ open: false, order: null, otp: '' }); fetchOrders(true); }}} />
+              onChange={e => setOtpModal({ ...otpModal, otp: e.target.value.replace(/\D/g, '') })}
+              onKeyDown={e => { if (e.key === 'Enter' && otpModal.otp) { handleVerifyPickup(otpModal.order._id, otpModal.otp); setOtpModal({ open: false, order: null, otp: '' }); fetchOrders(true); } }} />
             {import.meta.env.DEV && otpModal.order.pickup?.pickupCode && (
               <div className="mt-4 text-center"><span className="text-xs font-semibold px-3 py-1.5 bg-gradient-to-r from-orange-100 to-amber-100 text-orange-700 rounded-lg border border-orange-200">Dev hint: {otpModal.order.pickup.pickupCode}</span></div>
             )}
@@ -496,60 +494,59 @@ const ShopOrders = ({ handleReject, triggerPrint, handleVerifyPickup, handleUpda
                 <X size={20} />
               </button>
             </div>
-            
+
             <div className="space-y-4">
               <h4 className="font-semibold text-gray-800 border-b pb-2">Documents ({detailsModal.order.documents?.length || 0})</h4>
               {detailsModal.order.documents && detailsModal.order.documents.length > 0 ? (
                 detailsModal.order.documents.map((doc, di) => {
-                  // Calculate total pages for this document across all ranges
                   const docTotalPages = doc.printingRanges?.reduce((sum, range) => {
                     const rangePages = (range.rangeEnd - range.rangeStart + 1) * (range.copies || 1);
                     return sum + rangePages;
                   }, 0) || (doc.detectedPages || 0);
-                  
+
                   return (
                     <div key={doc._id || di} className="bg-gray-50 rounded-xl p-4 border border-gray-100">
                       <div className="flex justify-between items-start mb-2">
                         <p className="font-bold text-gray-800 text-sm">{doc.originalName}</p>
                         <span className="text-xs font-semibold bg-blue-100 text-blue-700 px-2 py-1 rounded-full">{docTotalPages} pages</span>
                       </div>
-                  
-                  <div className="space-y-2 mt-3">
-                    {doc.printingRanges?.map((range, ri) => (
-                      <div key={ri} className="flex flex-wrap items-center gap-2 text-xs">
-                        <span className="font-medium text-gray-600">Range: {range.rangeStart}-{range.rangeEnd}</span>
-                        <span className="text-gray-400">•</span>
-                        <span className={`px-1.5 py-0.5 rounded font-medium ${range.colorMode === 'color' ? 'bg-pink-100 text-pink-700' : 'bg-gray-200 text-gray-700'}`}>
-                          {range.colorMode === 'color' ? 'Color' : 'B&W'}
-                        </span>
-                        <span className="text-gray-400">•</span>
-                        <span className="font-medium bg-white border px-1.5 py-0.5 rounded">{range.sides === 'double' ? '2-Sided' : '1-Sided'}</span>
-                        <span className="text-gray-400">•</span>
-                        <span className="font-medium bg-white border px-1.5 py-0.5 rounded">Copies: {range.copies}</span>
-                        {range.pagesPerSheet > 1 && (
-                          <>
+
+                      <div className="space-y-2 mt-3">
+                        {doc.printingRanges?.map((range, ri) => (
+                          <div key={ri} className="flex flex-wrap items-center gap-2 text-xs">
+                            <span className="font-medium text-gray-600">Range: {range.rangeStart}-{range.rangeEnd}</span>
                             <span className="text-gray-400">•</span>
-                            <span className="font-bold bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded">{range.pagesPerSheet} Pages/Sheet (N-Up)</span>
-                          </>
-                        )}
+                            <span className={`px-1.5 py-0.5 rounded font-medium ${range.colorMode === 'color' ? 'bg-pink-100 text-pink-700' : 'bg-gray-200 text-gray-700'}`}>
+                              {range.colorMode === 'color' ? 'Color' : 'B&W'}
+                            </span>
+                            <span className="text-gray-400">•</span>
+                            <span className="font-medium bg-white border px-1.5 py-0.5 rounded">{range.sides === 'double' ? '2-Sided' : '1-Sided'}</span>
+                            <span className="text-gray-400">•</span>
+                            <span className="font-medium bg-white border px-1.5 py-0.5 rounded">Copies: {range.copies}</span>
+                            {range.pagesPerSheet > 1 && (
+                              <>
+                                <span className="text-gray-400">•</span>
+                                <span className="font-bold bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded">{range.pagesPerSheet} Pages/Sheet (N-Up)</span>
+                              </>
+                            )}
+                          </div>
+                        ))}
                       </div>
-                    ))}
-                  </div>
-                  
-                  {(detailsModal.order.additionalServices?.spiralBinding || detailsModal.order.additionalServices?.blackbook) && (
-                    <div className="mt-3 pt-3 border-t border-gray-200 flex gap-2">
-                      {detailsModal.order.additionalServices.spiralBinding && <span className="text-[10px] uppercase tracking-wide font-bold bg-orange-100 text-orange-700 px-2 py-1 rounded">Spiral Binding</span>}
-                      {detailsModal.order.additionalServices.blackbook && <span className="text-[10px] uppercase tracking-wide font-bold bg-gray-800 text-white px-2 py-1 rounded">Blackbook</span>}
+
+                      {(detailsModal.order.additionalServices?.spiralBinding || detailsModal.order.additionalServices?.blackbook) && (
+                        <div className="mt-3 pt-3 border-t border-gray-200 flex gap-2">
+                          {detailsModal.order.additionalServices.spiralBinding && <span className="text-[10px] uppercase tracking-wide font-bold bg-orange-100 text-orange-700 px-2 py-1 rounded">Spiral Binding</span>}
+                          {detailsModal.order.additionalServices.blackbook && <span className="text-[10px] uppercase tracking-wide font-bold bg-gray-800 text-white px-2 py-1 rounded">Blackbook</span>}
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
-              );
+                  );
                 })
               ) : (
                 <div className="text-gray-500 text-sm">No documents in this order</div>
               )}
             </div>
-            
+
             <div className="mt-6 pt-4 border-t border-gray-100 flex justify-end">
               <button onClick={() => setDetailsModal({ open: false, order: null })} className="px-5 py-2.5 bg-gray-900 text-white rounded-xl font-bold hover:bg-gray-800">Close</button>
             </div>

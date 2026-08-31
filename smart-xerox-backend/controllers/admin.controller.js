@@ -519,9 +519,9 @@ exports.getAllWithdrawals = asyncHandler(async (req, res) => {
 
   res.status(200).json({
     success: true,
-    data: { 
-      withdrawals, 
-      pagination: { total, page: Number(page), pages: Math.ceil(total / limit) } 
+    data: {
+      withdrawals,
+      pagination: { total, page: Number(page), pages: Math.ceil(total / limit) }
     },
   });
 });
@@ -579,26 +579,33 @@ exports.createShopWithCredentials = asyncHandler(async (req, res) => {
     throw new AppError('Shop name, owner name, email, phone, and password are required', 400);
   }
 
-  const bcrypt = require('bcryptjs');
-
   // Check or create User
   let user = await User.findOne({ email: email.toLowerCase() });
   if (user) {
     if (user.role === 'user') {
       user.role = 'shopkeeper';
+      user.isEmailVerified = true;
+      user.isPhoneVerified = true;
+      user.isActive = true;
       await user.save();
     }
   } else {
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(password, salt);
     user = await User.create({
       name: ownerName,
       email: email.toLowerCase(),
       phone,
-      password: hashedPassword,
+      password: password, // Mongoose userSchema pre-save hook handles hashing
       role: 'shopkeeper',
-      isVerified: true
+      isEmailVerified: true,
+      isPhoneVerified: true,
+      isActive: true,
     });
+  }
+
+  // Check if shop already exists for this owner
+  const existingShop = await Shop.findOne({ owner: user._id });
+  if (existingShop) {
+    throw new AppError(`A shop (${existingShop.name}) already exists for this user/email`, 400);
   }
 
   // Create Shop
@@ -635,9 +642,6 @@ exports.createShopWithCredentials = asyncHandler(async (req, res) => {
     isOpen: true
   });
 
-  user.shopId = shop._id;
-  await user.save();
-
   logger.info(`Admin created shop "${shop.name}" with shopkeeper account ${user.email}`);
 
   res.status(201).json({
@@ -654,8 +658,9 @@ exports.createShopWithCredentials = asyncHandler(async (req, res) => {
         ownerName: user.name,
         email: user.email,
         password: password,
-        loginUrl: 'https://pratibimb.online/login'
+        loginUrl: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/login`
       }
     }
   });
 });
+

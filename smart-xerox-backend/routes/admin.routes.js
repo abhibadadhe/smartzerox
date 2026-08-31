@@ -18,8 +18,13 @@ router.patch('/users/:id/toggle-status', adminController.toggleUserStatus);
 
 // Shops
 router.get('/shops', adminController.getAllShops);
+router.post('/shops/create-with-credentials', adminController.createShopWithCredentials);
 router.patch('/shops/:id/verify', adminController.verifyShop);
 router.patch('/shops/:id/margin', adminController.setShopMargin);
+router.put('/shops/:id/razorpay-account', adminController.updateShopRazorpayAccount);
+
+// Withdrawals
+router.get('/withdrawals', adminController.getAllWithdrawals);
 
 // Orders
 router.get('/orders', adminController.getAllOrders);
