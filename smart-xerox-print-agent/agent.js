@@ -120,6 +120,7 @@ function connectWebSocket(shopId) {
   socket.on('connect', () => {
     console.log('🟢 WebSocket Connected! Joined room shop:' + shopId);
     socket.emit('shop:join', shopId);
+    setTimeout(catchUpPendingOrders, 1000);
   });
 
   // ─── Real-Time Hardware Detection Listener ────────────────────────────────
@@ -299,6 +300,30 @@ async function stampOrderNumberOnPdf(pdfBuffer, orderNumber) {
     return Buffer.from(await pdfDoc.save());
   } catch (err) {
     return pdfBuffer; // fallback to original
+  }
+}
+
+
+/**
+ * 🔄 Queue Catch-Up: Automatically queries and prints all pending/unprinted
+ * orders whenever the agent starts, reconnects, or recovers from network drops!
+ */
+async function catchUpPendingOrders() {
+  if (!token) return;
+  try {
+    const res = await axios.get(`${API_URL}/api/orders/shop/orders?status=paid,accepted,printing&limit=20`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    const orders = res.data?.data?.orders || res.data?.orders || [];
+    const pending = orders.filter(o => !processedJobs.has(o._id.toString()));
+    if (pending.length > 0) {
+      console.log(`\n🔄 [Queue Catch-Up] Found ${pending.length} pending order(s) waiting in queue!`);
+      for (const ord of pending) {
+        await handlePrintJob(ord);
+      }
+    }
+  } catch (err) {
+    // Silent catch-up fallback
   }
 }
 
