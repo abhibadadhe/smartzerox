@@ -1,4 +1,5 @@
 const path = require('path');
+const zlib = require('zlib');
 const { PDFDocument } = require('pdf-lib');
 const pdfParse = require('pdf-parse');
 const logger = require('../config/logger');
@@ -77,19 +78,78 @@ const countPresentationSlides = (buffer) => {
 };
 
 /**
- * Auto-detect page count from Word DOCX files
+ * Robust Word (.docx/.doc) Page Counter
  */
 const countWordPages = (buffer) => {
-  if (!buffer || buffer.length === 0) return 0;
+  if (!buffer || buffer.length === 0) return 1;
+  const raw = buffer.toString('latin1');
+
+  // 1. Direct Regex for <Pages>N</Pages>
+  const pagesMatch = raw.match(/<Pages>(\d+)<\/Pages>/i);
+  if (pagesMatch && pagesMatch[1]) {
+    const n = parseInt(pagesMatch[1], 10);
+    if (n > 0 && n < 5000) return n;
+  }
+
+  // 2. Count page breaks in raw stream
+  const pageBreaks = raw.match(/<w:lastRenderedPageBreak\/>|<w:br\s+w:type="page"\/>/gi);
+  if (pageBreaks && pageBreaks.length > 0) {
+    return pageBreaks.length + 1;
+  }
+
+  // 3. Zip stream decompression for docProps/app.xml & word/document.xml
   try {
-    const str = buffer.toString('latin1');
-    const pagesMatch = str.match(/<Pages>(\d+)<\/Pages>/i);
-    if (pagesMatch && pagesMatch[1]) {
-      const n = parseInt(pagesMatch[1], 10);
-      if (n > 0 && n < 5000) return n;
+    let offset = 0;
+    while (offset < buffer.length - 30) {
+      if (buffer[offset] === 0x50 && buffer[offset+1] === 0x4b && buffer[offset+2] === 0x03 && buffer[offset+3] === 0x04) {
+        const compMethod = buffer.readUInt16LE(offset + 8);
+        const compSize = buffer.readUInt32LE(offset + 18);
+        const nameLen = buffer.readUInt16LE(offset + 26);
+        const extraLen = buffer.readUInt16LE(offset + 28);
+        const fileName = buffer.toString('utf8', offset + 30, offset + 30 + nameLen);
+        const dataOffset = offset + 30 + nameLen + extraLen;
+
+        if (fileName === 'docProps/app.xml' && compSize > 0 && dataOffset + compSize <= buffer.length) {
+          const compData = buffer.slice(dataOffset, dataOffset + compSize);
+          let xmlStr = compMethod === 8 ? zlib.inflateRawSync(compData).toString('utf8') : compData.toString('utf8');
+          const m = xmlStr.match(/<Pages>(\d+)<\/Pages>/i);
+          if (m && m[1]) {
+            const p = parseInt(m[1], 10);
+            if (p > 0) return p;
+          }
+          const wm = xmlStr.match(/<Words>(\d+)<\/Words>/i);
+          if (wm && wm[1]) {
+            const words = parseInt(wm[1], 10);
+            if (words > 0) return Math.max(1, Math.ceil(words / 350));
+          }
+        }
+
+        if (fileName === 'word/document.xml' && compSize > 0 && dataOffset + compSize <= buffer.length) {
+          try {
+            const compData = buffer.slice(dataOffset, dataOffset + compSize);
+            let xmlStr = compMethod === 8 ? zlib.inflateRawSync(compData).toString('utf8') : compData.toString('utf8');
+            const breaks = xmlStr.match(/<w:lastRenderedPageBreak\/>|<w:br\s+w:type="page"\/>/gi);
+            if (breaks && breaks.length > 0) {
+              return breaks.length + 1;
+            }
+          } catch (e) {}
+        }
+
+        offset = dataOffset + compSize;
+      } else {
+        offset++;
+      }
     }
-  } catch (e) {}
-  return 0;
+  } catch (err) {}
+
+  // 4. Word count estimation fallback
+  const wordsMatch = raw.match(/<Words>(\d+)<\/Words>/i);
+  if (wordsMatch && wordsMatch[1]) {
+    const words = parseInt(wordsMatch[1], 10);
+    if (words > 0) return Math.max(1, Math.ceil(words / 350));
+  }
+
+  return 1;
 };
 
 const countFilePages = async (file) => {
@@ -128,13 +188,13 @@ const countFilePages = async (file) => {
     return 0;
   }
 
-  // 4. Word DOCX Documents
+  // 4. Word DOCX / DOC Documents
   if (['.docx', '.doc'].includes(ext)) {
     if (file.buffer) {
       const wordPageCount = countWordPages(file.buffer);
       if (wordPageCount > 0) return wordPageCount;
     }
-    return 0;
+    return 1;
   }
 
   return 0;
@@ -168,4 +228,4 @@ const getPrintablePageCount = (detectedPages, pageRange) => {
   return pages.length;
 };
 
-module.exports = { countFilePages, parsePageRange, getPrintablePageCount, countPDFPagesFromBuffer, countPresentationSlides };
+module.exports = { countFilePages, parsePageRange, getPrintablePageCount, countPDFPagesFromBuffer, countPresentationSlides, countWordPages };

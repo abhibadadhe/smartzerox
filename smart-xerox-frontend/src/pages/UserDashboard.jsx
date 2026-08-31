@@ -196,7 +196,7 @@ const UserDashboard = () => {
 
   // Auto-upload file when selected
   
-    const detectClientPages = async (file) => {
+      const detectClientPages = async (file) => {
     const ext = file.name.toLowerCase();
     if (/\.(jpg|jpeg|png|webp|bmp)$/.test(ext)) return 1;
     
@@ -231,7 +231,7 @@ const UserDashboard = () => {
     }
 
     // DOCX Word page detection
-    if (/\.docx$/.test(ext)) {
+    if (/\.(docx|doc)$/.test(ext)) {
       try {
         const text = await file.text();
         const pagesMatch = text.match(/<Pages>(\d+)<\/Pages>/i);
@@ -239,7 +239,17 @@ const UserDashboard = () => {
           const n = parseInt(pagesMatch[1], 10);
           if (n > 0 && n < 5000) return n;
         }
+        const breaks = text.match(/<w:lastRenderedPageBreak\/>|<w:br\s+w:type="page"\/>/gi);
+        if (breaks && breaks.length > 0) {
+          return breaks.length + 1;
+        }
+        const wordsMatch = text.match(/<Words>(\d+)<\/Words>/i);
+        if (wordsMatch && wordsMatch[1]) {
+          const words = parseInt(wordsMatch[1], 10);
+          if (words > 0) return Math.max(1, Math.ceil(words / 350));
+        }
       } catch (e) {}
+      return 1; // Default fallback to 1 page
     }
 
     return 0;
