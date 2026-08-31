@@ -819,6 +819,51 @@ const UserDashboard = () => {
                     </div>
                   </div>
 
+                  
+                  {/* ⚡ BATCH CONTROLS (When multiple files are uploaded) */}
+                  {documents.length > 1 && (
+                    <div className="bg-gradient-to-r from-orange-50 via-amber-50 to-orange-50 dark:from-orange-950/30 dark:via-amber-950/20 dark:to-orange-950/30 border border-orange-200 dark:border-orange-800/40 rounded-2xl p-3.5 shadow-sm">
+                      <div className="flex items-center justify-between flex-wrap gap-2">
+                        <span className="text-xs font-bold text-orange-900 dark:text-orange-200 flex items-center gap-1.5">
+                          <span>⚡</span> Apply to All {documents.length} Files:
+                        </span>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <button
+                            type="button"
+                            onClick={() => applyOptionToAllDocs({ sides: 'double' })}
+                            className="px-3 py-1.5 text-xs font-semibold rounded-xl bg-orange-500 text-white hover:bg-orange-600 transition-all shadow-sm hover:shadow active:scale-95 flex items-center gap-1.5"
+                          >
+                            📖 Make All 2-Side (Back-to-Back)
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => applyOptionToAllDocs({ sides: 'single' })}
+                            className="px-3 py-1.5 text-xs font-semibold rounded-xl bg-white dark:bg-card border border-slate-200 text-slate-700 dark:text-slate-200 hover:bg-slate-100 transition-all shadow-sm active:scale-95 flex items-center gap-1.5"
+                          >
+                            📄 Make All 1-Side (Single)
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => applyOptionToAllDocs({ colorMode: 'bw' })}
+                            className="px-2.5 py-1.5 text-xs font-medium rounded-xl bg-white dark:bg-card border border-slate-200 text-slate-600 dark:text-slate-300 hover:bg-slate-100 transition-all shadow-sm active:scale-95"
+                          >
+                            🖤 All B&W
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => applyOptionToAllDocs({ colorMode: 'color' })}
+                            className="px-2.5 py-1.5 text-xs font-medium rounded-xl bg-white dark:bg-card border border-pink-200 text-pink-700 dark:text-pink-300 hover:bg-pink-50 transition-all shadow-sm active:scale-95"
+                          >
+                            🎨 All Color
+                          </button>
+                        </div>
+                      </div>
+                      <p className="text-[11px] text-muted-foreground mt-2">
+                        💡 Tip: You can click "Make All 2-Side", and still change any specific file to 1-Side individually below.
+                      </p>
+                    </div>
+                  )}
+
                   {/* Files List - Show on mobile right after upload, on desktop show in right column */}
                   <div className="lg:hidden">
                     <div className="bg-white/80 dark:bg-card/80 backdrop-blur-xl border border-white/60 dark:border-border/40 rounded-2xl p-4 shadow-sm">
