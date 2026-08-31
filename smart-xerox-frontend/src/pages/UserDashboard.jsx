@@ -1306,19 +1306,24 @@ const UserDashboard = () => {
                             {/* PowerPoint Print Settings - Show for PPT files only */}
                             {doc.isPPT && (
                               <div className="rounded-xl border border-orange-200 bg-orange-50/50 p-4 space-y-3">
-                                <h4 className="font-semibold text-orange-800 text-sm flex items-center gap-2">
-                                  📊 PowerPoint Print Settings
+                                <h4 className="font-semibold text-orange-800 text-sm flex items-center justify-between">
+                                  <span className="flex items-center gap-2">📊 PowerPoint Print Settings</span>
+                                  <span className="text-xs font-normal bg-orange-100 text-orange-800 px-2.5 py-0.5 rounded-full font-semibold">
+                                    {doc.pageCount || 0} Slides Total
+                                  </span>
                                 </h4>
-                                <div className="grid grid-cols-2 gap-3">
+
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                  {/* 1. Print Layout */}
                                   <div>
-                                    <Label className="text-xs">Print Layout</Label>
+                                    <Label className="text-xs font-semibold text-gray-700 mb-1 block">1. Print Layout</Label>
                                     <select 
-                                      value={doc.presentationOptions?.printLayout || 'handouts_4_horizontal'}
+                                      value={doc.presentationOptions?.printLayout || "handouts_4_horizontal"}
                                       onChange={(e) => {
                                         const layout = e.target.value;
-                                        const sppMap = { 'full_page_slides': 1, 'handouts_2_horizontal': 2, 'handouts_3': 3, 'handouts_4_horizontal': 4, 'handouts_6_horizontal': 6, 'handouts_9_horizontal': 9 };
+                                        const sppMap = { "full_page_slides": 1, "handouts_2_horizontal": 2, "handouts_3": 3, "handouts_4_horizontal": 4, "handouts_6_horizontal": 6, "handouts_9_horizontal": 9 };
                                         const spp = sppMap[layout] || 1;
-                                        const orient = (spp === 1) ? 'landscape' : (spp === 2 ? 'portrait' : 'landscape');
+                                        const orient = (spp === 1) ? "landscape" : (spp === 2 ? "portrait" : "landscape");
                                         updateDoc(di, { 
                                           presentationOptions: { 
                                             ...doc.presentationOptions, 
@@ -1328,32 +1333,95 @@ const UserDashboard = () => {
                                           } 
                                         });
                                       }}
-                                      className="w-full mt-1 rounded-lg border-2 border-orange-200 px-3 py-2 text-sm focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none bg-white"
+                                      className="w-full rounded-lg border-2 border-orange-200 px-3 py-2 text-sm focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none bg-white font-medium"
                                     >
                                       <option value="full_page_slides">Full Page Slides (1 per page)</option>
                                       <option value="handouts_2_horizontal">Handouts: 2 Slides</option>
                                       <option value="handouts_3">Handouts: 3 Slides</option>
-                                      <option value="handouts_4_horizontal">Handouts: 4 Slides</option>
+                                      <option value="handouts_4_horizontal">Handouts: 4 Slides (Recommended)</option>
                                       <option value="handouts_6_horizontal">Handouts: 6 Slides</option>
                                       <option value="handouts_9_horizontal">Handouts: 9 Slides</option>
                                     </select>
                                   </div>
+
+                                  {/* 2. SIDES: 1-Side (Single) vs 2-Side (Double / Back-to-Back) */}
                                   <div>
-                                    <Label className="text-xs">Orientation</Label>
-                                    <select 
-                                      value={doc.presentationOptions?.orientation || 'landscape'}
-                                      onChange={(e) => updateDoc(di, { presentationOptions: { ...doc.presentationOptions, orientation: e.target.value } })}
-                                      className="w-full mt-1 rounded-lg border-2 border-orange-200 px-3 py-2 text-sm focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none bg-white"
+                                    <Label className="text-xs font-semibold text-gray-700 mb-1 block">2. Select Sides</Label>
+                                    <select
+                                      value={doc.simpleSides || "single"}
+                                      onChange={(e) => {
+                                        const s = e.target.value;
+                                        updateDoc(di, {
+                                          simpleSides: s,
+                                          colorSides: s,
+                                          bwSides: s,
+                                          configs: doc.configs.map(c => ({ ...c, sides: s }))
+                                        });
+                                      }}
+                                      className="w-full rounded-lg border-2 border-orange-200 px-3 py-2 text-sm focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none bg-white font-semibold text-orange-950"
                                     >
-                                      <option value="landscape">Landscape</option>
-                                      <option value="portrait">Portrait</option>
+                                      <option value="single">📄 1-Side (Single-Sided)</option>
+                                      <option value="double">📖 2-Side (Back-to-Back)</option>
+                                    </select>
+                                  </div>
+
+                                  {/* 3. Orientation */}
+                                  <div>
+                                    <Label className="text-xs font-semibold text-gray-700 mb-1 block">3. Orientation</Label>
+                                    <select 
+                                      value={doc.presentationOptions?.orientation || "landscape"}
+                                      onChange={(e) => updateDoc(di, { presentationOptions: { ...doc.presentationOptions, orientation: e.target.value } })}
+                                      className="w-full rounded-lg border-2 border-orange-200 px-3 py-2 text-sm focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none bg-white font-medium"
+                                    >
+                                      <option value="landscape">Landscape (Horizontal)</option>
+                                      <option value="portrait">Portrait (Vertical)</option>
                                     </select>
                                   </div>
                                 </div>
+
+                                {/* Color Mode & Copies */}
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                                  <div>
+                                    <Label className="text-xs font-semibold text-gray-700 mb-1 block">Color Mode</Label>
+                                    <select
+                                      value={doc.simpleMode || "all-xerox"}
+                                      onChange={(e) => {
+                                        const mode = e.target.value;
+                                        const colorMode = mode === "all-color" ? "color" : "bw";
+                                        updateDoc(di, {
+                                          simpleMode: mode,
+                                          configs: doc.configs.map(c => ({ ...c, colorMode }))
+                                        });
+                                      }}
+                                      className="w-full rounded-lg border-2 border-orange-200 px-3 py-2 text-sm focus:border-orange-500 outline-none bg-white font-medium"
+                                    >
+                                      <option value="all-xerox">🖤 Black & White (B&W Xerox)</option>
+                                      <option value="all-color">🎨 Full Color Print</option>
+                                    </select>
+                                  </div>
+                                  <div>
+                                    <Label className="text-xs font-semibold text-gray-700 mb-1 block">Number of Copies</Label>
+                                    <Input
+                                      type="number"
+                                      min={1}
+                                      max={100}
+                                      value={doc.simpleCopies || 1}
+                                      onChange={(e) => {
+                                        const copies = Math.max(1, parseInt(e.target.value) || 1);
+                                        updateDoc(di, {
+                                          simpleCopies: copies,
+                                          configs: doc.configs.map(c => ({ ...c, copies }))
+                                        });
+                                      }}
+                                      className="text-sm bg-white"
+                                    />
+                                  </div>
+                                </div>
+
                                 <div className="flex gap-4 mt-2">
                                   <label className="flex items-center gap-2 cursor-pointer">
                                     <input type="checkbox" checked={doc.presentationOptions?.frameSlides} onChange={(e) => updateDoc(di, { presentationOptions: { ...doc.presentationOptions, frameSlides: e.target.checked } })} className="h-4 w-4 rounded text-orange-600 focus:ring-orange-500" />
-                                    <span className="text-xs font-medium text-orange-900">Frame Slides</span>
+                                    <span className="text-xs font-medium text-orange-900">Frame Slides (Border around each slide)</span>
                                   </label>
                                   <label className="flex items-center gap-2 cursor-pointer">
                                     <input type="checkbox" checked={doc.presentationOptions?.scaleToFitPaper} onChange={(e) => updateDoc(di, { presentationOptions: { ...doc.presentationOptions, scaleToFitPaper: e.target.checked } })} className="h-4 w-4 rounded text-orange-600 focus:ring-orange-500" />
