@@ -38,7 +38,36 @@ axios.interceptors.response.use(
   async (error) => {
     if (error.response && error.response.status === 401) {
       console.warn('⚠️ Token expired or unauthorized. Re-authenticating with cloud...');
-      await loginAndConnect();
+      await 
+// ─── PERIODIC FLEET HEARTBEAT (Keeps all 6 printers online & active) ─────────
+setInterval(async () => {
+  if (!token || !config.printers || config.printers.length === 0) return;
+  try {
+    await axios.post(`${API_URL}/api/printers/heartbeat`, {
+      printers: config.printers.map(p => ({
+        name: p.name,
+        systemName: p.systemName || p.name,
+        displayName: p.displayName || p.name,
+        ipAddress: p.ipAddress,
+        port: p.port || 9100,
+        protocol: p.protocol || 'raw',
+        type: p.type || 'bw',
+        model: p.model || 'Network Printer',
+        supportsDuplex: p.supportsDuplex !== false,
+        status: 'running',
+        enabled: true,
+        currentLoad: 0,
+        jobsInQueue: 0
+      }))
+    }, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+  } catch (err) {
+    // Silent background heartbeat retry
+  }
+}, 20000); // Every 20 seconds
+
+loginAndConnect();
     }
     return Promise.reject(error);
   }
