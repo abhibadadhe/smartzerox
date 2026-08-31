@@ -278,10 +278,10 @@ async function stampOrderNumberOnPdf(pdfBuffer, orderNumber) {
     const pages = pdfDoc.getPages();
     if (pages.length === 0) return pdfBuffer;
 
-    const font = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
-    const fontSize = 9;
-    const margin = 18; // ~6.5mm clears hardware margin
-    const stampText = `#${orderNumber}`;
+    const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+    const fontSize = 6.5; // Decreased, ultra-subtle compact font
+    const margin = 14;    // ~5mm unobtrusive margin
+    const stampText = `${orderNumber}`; // No '#' hash symbol, only the pure number (e.g. 4)
 
     // Stamp on every page margin vertically (rotated 90 deg)
     for (const page of pages) {
@@ -290,8 +290,8 @@ async function stampOrderNumberOnPdf(pdfBuffer, orderNumber) {
         y: margin,
         size: fontSize,
         font,
-        color: rgb(0.3, 0.3, 0.3),
-        opacity: 0.7,
+        color: rgb(0.35, 0.35, 0.35),
+        opacity: 0.6,
         rotate: degrees(90),
       });
     }
