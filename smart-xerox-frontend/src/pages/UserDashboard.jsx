@@ -195,6 +195,25 @@ const UserDashboard = () => {
   };
 
   // Auto-upload file when selected
+  
+  const detectClientPages = async (file) => {
+    const ext = file.name.toLowerCase();
+    if (/\.(jpg|jpeg|png|webp|bmp)$/.test(ext)) return 1;
+    if (/\.pdf$/.test(ext)) {
+      try {
+        const text = await file.slice(0, 500000).text();
+        const matches = text.match(/\/Type\s*\/Page[^s]/g);
+        if (matches && matches.length > 0) return matches.length;
+        const countMatch = text.match(/\/Count\s+(\d+)/);
+        if (countMatch && countMatch[1]) {
+          const parsed = parseInt(countMatch[1], 10);
+          if (parsed > 0 && parsed < 10000) return parsed;
+        }
+      } catch (e) {}
+    }
+    return 0;
+  };
+
   const handleFileSelect = async (selectedFile) => {
     if (!selectedFile) return;
 
@@ -207,7 +226,8 @@ const UserDashboard = () => {
         setUploadStep(pct < 100 ? `Uploading... ${pct}%` : 'Detecting pages...');
       });
       const doc = uploadRes.data.data || uploadRes.data;
-      const detectedPages = doc.detectedPages || 0;
+      const clientPages = await detectClientPages(selectedFile);
+      const detectedPages = (doc.detectedPages && doc.detectedPages > 0) ? doc.detectedPages : (clientPages > 0 ? clientPages : 0);
       const fileName = selectedFile?.name?.toLowerCase() || '';
       const isImage = /\.(jpg|jpeg|png)$/.test(fileName);
       const isWord  = /\.(doc|docx)$/.test(fileName);

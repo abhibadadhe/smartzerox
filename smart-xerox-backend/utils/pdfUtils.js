@@ -1,45 +1,71 @@
 const path = require('path');
+const { PDFDocument } = require('pdf-lib');
 const pdfParse = require('pdf-parse');
 const logger = require('../config/logger');
 
 /**
- * Count pages directly from an in-memory buffer — no S3 round-trip needed.
- * multer-s3 does NOT keep file.buffer, so we intercept before upload via
- * a custom multer storage or read from the stream. For now we accept a
- * raw Buffer passed explicitly from the upload controller.
+ * Multi-Engine PDF Page Counter:
+ * 1. pdf-lib (Fastest, handles modern object streams and encrypted xrefs)
+ * 2. pdf-parse (Standard fallback)
+ * 3. Binary regex scanner (/Type /Page and /Count N)
  */
 const countPDFPagesFromBuffer = async (buffer) => {
+  if (!buffer || buffer.length === 0) return 0;
+
+  // Engine 1: pdf-lib
   try {
-    const data = await pdfParse(buffer, { max: 0 }); // max:0 = parse structure only, skip text extraction
-    return data.numpages;
+    const pdfDoc = await PDFDocument.load(buffer, { ignoreEncryption: true });
+    const count = pdfDoc.getPageCount();
+    if (count > 0) return count;
   } catch (err) {
-    logger.warn(`PDF page count failed: ${err.message}`);
-    return 0;
+    logger.warn(`pdf-lib count fallback: ${err.message}`);
   }
+
+  // Engine 2: pdf-parse
+  try {
+    const data = await pdfParse(buffer, { max: 0 });
+    if (data && data.numpages > 0) return data.numpages;
+  } catch (err) {
+    logger.warn(`pdf-parse count fallback: ${err.message}`);
+  }
+
+  // Engine 3: Binary Stream Scanner
+  try {
+    const str = buffer.toString('latin1');
+    const matches = str.match(/\/Type\s*\/Page[^s]/g);
+    if (matches && matches.length > 0) return matches.length;
+
+    const countMatch = str.match(/\/Count\s+(\d+)/);
+    if (countMatch && countMatch[1]) {
+      const parsed = parseInt(countMatch[1], 10);
+      if (parsed > 0 && parsed < 10000) return parsed;
+    }
+  } catch (err) {
+    logger.warn(`Binary scanner count fallback: ${err.message}`);
+  }
+
+  return 0;
 };
 
 const countFilePages = async (file) => {
   let mime = (file.mimetype || '').toLowerCase();
   const ext = path.extname(file.originalname || '').toLowerCase();
 
-  // Normalise mime from extension when browser sends generic octet-stream
+  // Normalize mime from extension
   if (!mime || mime === 'application/octet-stream') {
     if (ext === '.pdf')                      mime = 'application/pdf';
     else if (ext === '.png')                 mime = 'image/png';
     else if (ext === '.jpg' || ext === '.jpeg') mime = 'image/jpeg';
     else if (ext === '.docx')                mime = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
     else if (ext === '.doc')                 mime = 'application/msword';
-    // ── PowerPoint normalization ──
     else if (ext === '.pptx')                mime = 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
     else if (ext === '.ppt')                 mime = 'application/vnd.ms-powerpoint';
-    else if (ext === '.pptm')                mime = 'application/vnd.ms-powerpoint.presentation.macroEnabled.12';
-    else if (ext === '.ppsx')                mime = 'application/vnd.openxmlformats-officedocument.presentationml.slideshow';
-    else if (ext === '.odp')                 mime = 'application/vnd.oasis.opendocument.presentation';
-    else if (ext === '.key')                 mime = 'application/x-iwork-keynote-sffkey';
   }
 
-  // Images are always 1 page — covers image/jpeg, image/jpg, image/png, image/*
-  if (mime.startsWith('image/') || ['.jpg', '.jpeg', '.png'].includes(ext)) return 1;
+  // Images are always 1 page
+  if (mime.startsWith('image/') || ['.jpg', '.jpeg', '.png', '.webp', '.bmp', '.tiff'].includes(ext)) {
+    return 1;
+  }
 
   // PDF
   if (mime === 'application/pdf' || ext === '.pdf') {
@@ -48,42 +74,14 @@ const countFilePages = async (file) => {
     return 0;
   }
 
-  // ✅ FIX #15: DOC/DOCX — cannot count without conversion
-  // Return 0 to signal frontend that manual entry is required
-  // Frontend will show "Please enter total pages manually" message
-  if (mime === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
-      mime === 'application/msword' ||
-      ext === '.docx' || ext === '.doc') {
-    logger.info(`DOC/DOCX file detected: ${file.originalname} — manual page count required`);
-    return 0;  // Signal to frontend: manual entry needed
+  // DOC/DOCX / PPT/PPTX
+  if (['.docx', '.doc', '.pptx', '.ppt', '.pptm', '.ppsx', '.odp'].includes(ext)) {
+    return 0; // Manual entry / auto-converted on print
   }
 
-  // ✅ NEW: PPT/PPTX — cannot count slides without conversion
-  // Return 0 to signal frontend that manual entry is required
-  // Frontend will show "Please enter total slides manually" message
-  const pptMimes = [
-    'application/vnd.ms-powerpoint',
-    'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-    'application/vnd.openxmlformats-officedocument.presentationml.slideshow',
-    'application/vnd.ms-powerpoint.presentation.macroEnabled.12',
-    'application/vnd.oasis.opendocument.presentation',
-    'application/x-iwork-keynote-sffkey',
-  ];
-  const pptExts = ['.ppt', '.pptx', '.pptm', '.ppsx', '.odp', '.key'];
-  
-  if (pptMimes.includes(mime) || pptExts.includes(ext)) {
-    logger.info(`Presentation file detected: ${file.originalname} — manual slide count required`);
-    return 0;  // Signal to frontend: manual entry needed
-  }
-
-  // Unknown format
-  logger.warn(`Unknown file format: ${file.originalname} (mime: ${mime}, ext: ${ext})`);
   return 0;
 };
 
-/**
- * Parse page range string like "1-5,7,10-12" into array of page numbers
- */
 const parsePageRange = (pageRange, totalPages) => {
   if (!pageRange || pageRange === 'all') {
     return Array.from({ length: totalPages }, (_, i) => i + 1);
@@ -106,13 +104,10 @@ const parsePageRange = (pageRange, totalPages) => {
   return Array.from(pages).sort((a, b) => a - b);
 };
 
-/**
- * Calculate actual pages to print based on page range
- */
 const getPrintablePageCount = (detectedPages, pageRange) => {
   if (!pageRange || pageRange === 'all') return detectedPages;
   const pages = parsePageRange(pageRange, detectedPages);
   return pages.length;
 };
 
-module.exports = { countFilePages, parsePageRange, getPrintablePageCount };
+module.exports = { countFilePages, parsePageRange, getPrintablePageCount, countPDFPagesFromBuffer };
