@@ -5,6 +5,79 @@ const pdfParse = require('pdf-parse');
 const logger = require('../config/logger');
 
 /**
+ * Multi-Engine PDF Page Counter
+ */
+const countPDFPagesFromBuffer = async (buffer) => {
+  if (!buffer || buffer.length === 0) return 0;
+
+  // Engine 1: pdf-lib
+  try {
+    const pdfDoc = await PDFDocument.load(buffer, { ignoreEncryption: true });
+    const count = pdfDoc.getPageCount();
+    if (count > 0) return count;
+  } catch (err) {
+    logger.warn(`pdf-lib count fallback: ${err.message}`);
+  }
+
+  // Engine 2: pdf-parse
+  try {
+    const data = await pdfParse(buffer, { max: 0 });
+    if (data && data.numpages > 0) return data.numpages;
+  } catch (err) {
+    logger.warn(`pdf-parse count fallback: ${err.message}`);
+  }
+
+  // Engine 3: Binary Stream Scanner
+  try {
+    const str = buffer.toString('latin1');
+    const matches = str.match(/\/Type\s*\/Page[^s]/g);
+    if (matches && matches.length > 0) return matches.length;
+
+    const countMatch = str.match(/\/Count\s+(\d+)/);
+    if (countMatch && countMatch[1]) {
+      const parsed = parseInt(countMatch[1], 10);
+      if (parsed > 0 && parsed < 10000) return parsed;
+    }
+  } catch (err) {
+    logger.warn(`Binary scanner count fallback: ${err.message}`);
+  }
+
+  return 0;
+};
+
+/**
+ * Auto-detect slide count from PPTX / PPT files
+ */
+const countPresentationSlides = (buffer) => {
+  if (!buffer || buffer.length === 0) return 0;
+  try {
+    const str = buffer.toString('latin1');
+
+    // Method 1: Check docProps/app.xml <Slides>N</Slides>
+    const slidesMatch = str.match(/<Slides>(\d+)<\/Slides>/i);
+    if (slidesMatch && slidesMatch[1]) {
+      const n = parseInt(slidesMatch[1], 10);
+      if (n > 0 && n < 5000) return n;
+    }
+
+    // Method 2: Count ppt/slides/slideN.xml in the zip directory
+    const slideEntries = str.match(/ppt\/slides\/slide\d+\.xml/gi);
+    if (slideEntries && slideEntries.length > 0) {
+      const unique = new Set(slideEntries.map(s => s.toLowerCase()));
+      return unique.size;
+    }
+
+    // Method 3: Legacy .ppt slide header scan
+    const legacyMatches = str.match(/slideShowSlideInfoAtom/gi);
+    if (legacyMatches && legacyMatches.length > 0) {
+      return legacyMatches.length;
+    }
+  } catch (e) {}
+
+  return 0;
+};
+
+/**
  * Exact Word (.docx / .doc) Page Extractor
  * Decompresses docProps/app.xml directly from ZIP stream to read canonical <Pages>N</Pages>
  */
