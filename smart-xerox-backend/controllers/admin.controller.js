@@ -664,3 +664,123 @@ exports.createShopWithCredentials = asyncHandler(async (req, res) => {
   });
 });
 
+
+
+// ─── Shop Settlement & Admin Margin Report ───────────────────────────────────
+exports.getShopSettlementReport = asyncHandler(async (req, res) => {
+  const { shopId, from, to } = req.query;
+  const Order = require('../models/Order');
+  const Shop = require('../models/Shop');
+
+  const match = {
+    status: { $in: ['paid', 'accepted', 'printing', 'ready', 'picked_up'] }
+  };
+
+  if (shopId && shopId !== 'all') {
+    match.shop = new (require('mongoose').Types.ObjectId)(shopId);
+  }
+
+  if (from || to) {
+    match.createdAt = {};
+    if (from) match.createdAt.$gte = new Date(from);
+    if (to) match.createdAt.$lte = new Date(to);
+  }
+
+  const orders = await Order.find(match)
+    .populate('shop', 'name owner address phone')
+    .populate('user', 'name phone email')
+    .sort({ createdAt: -1 })
+    .lean();
+
+  const shopMap = {};
+  const allShops = await Shop.find({}).populate('owner', 'name email phone').lean();
+  allShops.forEach(s => {
+    shopMap[s._id.toString()] = {
+      shopId: s._id,
+      shopName: s.name,
+      ownerName: s.owner?.name || 'Shopkeeper',
+      ownerPhone: s.owner?.phone || s.phone || '',
+      ownerEmail: s.owner?.email || '',
+      totalOrders: 0,
+      totalRevenue: 0,
+      totalDocs: 0,
+      docsOver5Pages: 0,
+      adminMarginReceivable: 0,
+      shopNetRevenue: 0,
+      orders: []
+    };
+  });
+
+  orders.forEach(order => {
+    const sId = order.shop?._id?.toString() || order.shop?.toString();
+    if (!shopMap[sId]) {
+      shopMap[sId] = {
+        shopId: sId,
+        shopName: order.shop?.name || 'Shop',
+        ownerName: 'Shopkeeper',
+        ownerPhone: '',
+        ownerEmail: '',
+        totalOrders: 0,
+        totalRevenue: 0,
+        totalDocs: 0,
+        docsOver5Pages: 0,
+        adminMarginReceivable: 0,
+        shopNetRevenue: 0,
+        orders: []
+      };
+    }
+
+    let orderDocsOver5 = 0;
+    let orderTotalDocs = order.documents?.length || 1;
+    (order.documents || []).forEach(doc => {
+      const docPages = (doc.printingRanges || []).reduce((sum, r) => sum + ((r.rangeEnd - r.rangeStart + 1) * (r.copies || 1)), 0) || (doc.detectedPages || 1);
+      if (docPages > 5) orderDocsOver5++;
+    });
+
+    const adminMargin = orderDocsOver5 * 1; // ₹1 per document with > 5 pages
+    const totalAmount = order.pricing?.total || 0;
+    const shopReceivable = Math.max(0, totalAmount - adminMargin);
+
+    const targetShop = shopMap[sId];
+    targetShop.totalOrders += 1;
+    targetShop.totalRevenue += totalAmount;
+    targetShop.totalDocs += orderTotalDocs;
+    targetShop.docsOver5Pages += orderDocsOver5;
+    targetShop.adminMarginReceivable += adminMargin;
+    targetShop.shopNetRevenue += shopReceivable;
+
+    targetShop.orders.push({
+      orderId: order._id,
+      orderNumber: order.orderNumber,
+      createdAt: order.createdAt,
+      customerName: order.user?.name || 'Customer',
+      customerPhone: order.user?.phone || '',
+      totalDocs: orderTotalDocs,
+      docsOver5Pages: orderDocsOver5,
+      totalAmount,
+      adminMargin,
+      shopReceivable,
+      status: order.status
+    });
+  });
+
+  const shopSummaries = Object.values(shopMap).filter(s => (!shopId || shopId === 'all' || s.shopId.toString() === shopId));
+
+  const overallTotals = shopSummaries.reduce((acc, s) => {
+    acc.totalOrders += s.totalOrders;
+    acc.totalRevenue += s.totalRevenue;
+    acc.totalDocs += s.totalDocs;
+    acc.docsOver5Pages += s.docsOver5Pages;
+    acc.adminMarginReceivable += s.adminMarginReceivable;
+    acc.shopNetRevenue += s.shopNetRevenue;
+    return acc;
+  }, { totalOrders: 0, totalRevenue: 0, totalDocs: 0, docsOver5Pages: 0, adminMarginReceivable: 0, shopNetRevenue: 0 });
+
+  res.status(200).json({
+    success: true,
+    data: {
+      overallTotals,
+      shops: shopSummaries
+    }
+  });
+});

@@ -81,6 +81,72 @@ const AdminDashboard = () => {
   // Users tab
   const [userSearch, setUserSearch]   = useState('');
   const [userRole, setUserRole]       = useState('');
+  // Settlement Report tab
+  const [settlementData, setSettlementData] = useState(null);
+  const [settlementLoading, setSettlementLoading] = useState(false);
+  const [selectedShopFilter, setSelectedShopFilter] = useState('all');
+  const [settlementFrom, setSettlementFrom] = useState('');
+  const [settlementTo, setSettlementTo] = useState('');
+  const [drilldownShop, setDrilldownShop] = useState(null);
+
+  const fetchSettlementReport = useCallback(async () => {
+    setSettlementLoading(true);
+    try {
+      const params = new URLSearchParams();
+      if (selectedShopFilter && selectedShopFilter !== 'all') params.append('shopId', selectedShopFilter);
+      if (settlementFrom) params.append('from', settlementFrom);
+      if (settlementTo) params.append('to', settlementTo);
+
+      const res = await adminAPI.getSettlementReport(params.toString());
+      setSettlementData(res.data.data);
+    } catch (err) {
+      toast.error('Failed to load settlement report');
+    } finally {
+      setSettlementLoading(false);
+    }
+  }, [selectedShopFilter, settlementFrom, settlementTo]);
+
+  useEffect(() => {
+    if (activeTab === 'settlement') {
+      fetchSettlementReport();
+    }
+  }, [activeTab, fetchSettlementReport]);
+
+  const exportSettlementCSV = () => {
+    if (!settlementData || !settlementData.shops) {
+      toast.error('No data to export');
+      return;
+    }
+
+    const rows = [
+      ['Shop Name', 'Owner Name', 'Owner Phone', 'Total Orders', 'Total Gross Revenue (INR)', 'Total Docs', 'Docs > 5 Pages', 'Admin Margin Due (INR)', 'Shop Net Revenue (INR)']
+    ];
+
+    settlementData.shops.forEach(s => {
+      rows.push([
+        `"${s.shopName}"`,
+        `"${s.ownerName}"`,
+        `"${s.ownerPhone}"`,
+        s.totalOrders,
+        s.totalRevenue,
+        s.totalDocs,
+        s.docsOver5Pages,
+        s.adminMarginReceivable,
+        s.shopNetRevenue
+      ]);
+    });
+
+    const csvContent = 'data:text/csv;charset=utf-8,' + rows.map(e => e.join(',')).join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', `Shop_Settlement_Report_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    toast.success('Downloaded Settlement CSV Report!');
+  };
+
 
   // Orders tab
   const [orderStatus, setOrderStatus] = useState('');

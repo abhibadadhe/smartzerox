@@ -11,6 +11,7 @@ router.use(protect, restrictTo('admin'));
 router.get('/dashboard', adminController.getDashboard);
 router.get('/analytics', adminController.getAnalytics);
 router.get('/revenue', adminController.getRevenueReport);
+router.get('/settlement-report', adminController.getShopSettlementReport);
 
 // Users
 router.get('/users', adminController.getAllUsers);

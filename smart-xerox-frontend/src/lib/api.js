@@ -294,6 +294,7 @@ export const adminAPI = {
   getDashboard:  ()        => api.get('/admin/dashboard'),
   getAnalytics:  ()        => api.get('/admin/analytics'),
   getRevenue:    (query)   => api.get(`/admin/revenue${query ? `?${query}` : ''}`),
+  getSettlementReport: (query) => api.get(`/admin/settlement-report${query ? `?${query}` : ''}`),
   getUsers:      (query)   => api.get(`/admin/users${query ? `?${query}` : ''}`),
   toggleUser:    (id)      => api.patch(`/admin/users/${id}/toggle-status`),
   getShops:      (query)   => api.get(`/admin/shops${query ? `?${query}` : ''}`),
