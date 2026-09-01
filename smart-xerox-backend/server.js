@@ -58,7 +58,7 @@ const server = http.createServer(app);
 // ─── 1. TRUST PROXY ──────────────────────────────────────────────────────────
 app.set('trust proxy', 1);
 
-// ─── 2. CORS (MUST BE FIRST BEFORE ANY OTHER MIDDLEWARE OR REDIRECTS) ─────────
+// ─── 2. BULLETPROOF CORS & PREFLIGHT INTERCEPTOR (FIRST MIDDLEWARE) ──────────
 const rawFrontendUrls = (process.env.FRONTEND_URL || '')
   .split(',')
   .map(u => u.trim().replace(/\/$/, ''))
@@ -76,12 +76,35 @@ const allowedOriginsList = [
   'http://127.0.0.1:5173'
 ];
 
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (origin) {
+    const isAllowed = 
+      allowedOriginsList.includes(origin) ||
+      origin.endsWith('.pratibimb.online') ||
+      origin.includes('pratibimb.online') ||
+      process.env.NODE_ENV !== 'production';
+
+    if (isAllowed) {
+      res.setHeader('Access-Control-Allow-Origin', origin);
+      res.setHeader('Access-Control-Allow-Credentials', 'true');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-razorpay-signature, Idempotency-Key, x-csrf-token, X-Requested-With');
+      res.setHeader('Access-Control-Expose-Headers', 'x-new-token, x-refresh-token');
+      res.setHeader('Access-Control-Max-Age', '86400');
+    }
+  }
+
+  // Preflight OPTIONS fast response (204 No Content)
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(204);
+  }
+  next();
+});
+
 const corsOptions = {
   origin: (origin, callback) => {
-    // 1. Allow non-browser requests (no origin header: mobile apps, print agent, health checks, curl, webhooks)
     if (!origin) return callback(null, true);
-
-    // 2. Allow exact matches or any *.pratibimb.online subdomain
     if (
       allowedOriginsList.includes(origin) ||
       origin.endsWith('.pratibimb.online') ||
@@ -90,8 +113,6 @@ const corsOptions = {
     ) {
       return callback(null, true);
     }
-
-    logger.warn(`CORS blocked unknown origin: ${origin}`);
     return callback(null, false);
   },
   credentials: true,
@@ -102,7 +123,7 @@ const corsOptions = {
 };
 
 app.use(cors(corsOptions));
-app.options('*', cors(corsOptions));
+
 
 
 // Trust reverse proxy (Render, Railway, nginx) for correct req.ip
