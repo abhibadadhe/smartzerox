@@ -1,45 +1,18 @@
 /**
- * Helper to parse a page range string (e.g., '1-5,7,10-12') and return exact page count.
- */
-function getPageCountFromRange(rangeStr, totalPages) {
-  if (!rangeStr || rangeStr.toLowerCase() === 'all') return totalPages;
-  const indices = new Set();
-  const parts = rangeStr.split(',');
-  for (const part of parts) {
-    const trimmed = part.trim();
-    if (!trimmed) continue;
-    if (trimmed.includes('-')) {
-      const [startStr, endStr] = trimmed.split('-');
-      const start = parseInt(startStr, 10);
-      const end = parseInt(endStr, 10);
-      if (!isNaN(start) && !isNaN(end) && start > 0 && end >= start) {
-        const actualEnd = Math.min(end, totalPages);
-        for (let i = start; i <= actualEnd; i++) indices.add(i);
-      }
-    } else {
-      const single = parseInt(trimmed, 10);
-      if (!isNaN(single) && single > 0 && single <= totalPages) {
-        indices.add(single);
-      }
-    }
-  }
-  return indices.size > 0 ? indices.size : totalPages;
-}
-
-/**
- * Calculate order pricing based on documents, shop pricing, and platform margin.
+ * Calculate order pricing based on documents, shop pricing, and admin platform fee.
  * 
- * Commission split logic:
- *   - `shop.platformMargin` is the per-shop override (set by admin).
- *   - If shop.platformMargin > 0, it is used as-is.
- *   - If shop.platformMargin === 0, the `globalCommissionRate` param is used (default 0).
- *   - The commission is added ON TOP of the base price (customer pays base + commission).
- *   - Shop receives `shopReceivable` = base price (subtotal + additionalCharge).
- *   - Platform keeps `platformMargin` amount = commission.
+ * Commission & Fee Rules:
+ *   - Base printing cost is calculated per document range (B&W or Color, Single or Double-sided).
+ *   - ADMIN PLATFORM FEE: If a document has > 5 pages, add ₹1 extra per document.
+ *     (If document has <= 5 pages, admin fee = ₹0).
+ *   - Shopkeeper receives: subtotal (printing cost) + additionalServices (spiral/lamination).
+ *   - Admin receives: totalAdminFee (₹1 per document with > 5 pages).
+ *   - Student pays total = shopReceivable + totalAdminFee.
  */
 const calculateOrderPrice = (documents, shop, additionalServices = {}, globalCommissionRate = 0) => {
   let subtotal = 0;
   let totalPrintedSheets = 0;
+  let totalAdminFee = 0;
   const documentPrices = [];
 
   documents.forEach((doc) => {
@@ -47,12 +20,21 @@ const calculateOrderPrice = (documents, shop, additionalServices = {}, globalCom
     let docPrice = 0;
 
     if (!printingRanges || printingRanges.length === 0) {
-      // ✅ FIX EDGE CASE #2: Throw error instead of silent default
-      // This ensures frontend MUST send explicit print settings
       throw new Error(
         `Document "${doc.originalName || 'unknown'}" missing printingRanges. ` +
         `All documents must have explicit colorMode and sides settings.`
       );
+    }
+
+    // Calculate total pages for this document
+    const docTotalPages = printingRanges.reduce((sum, r) => {
+      const p = (r.rangeEnd - r.rangeStart + 1) * (r.copies || 1);
+      return sum + p;
+    }, 0) || (detectedPages || 1);
+
+    // Rule: If document has > 5 pages, add ₹1 extra fee for admin
+    if (docTotalPages > 5) {
+      totalAdminFee += 1;
     }
 
     // Process each printing range
@@ -60,14 +42,10 @@ const calculateOrderPrice = (documents, shop, additionalServices = {}, globalCom
       const { rangeStart, rangeEnd, copies, colorMode, sides, pagesPerSheet = 1 } = range;
       const pagesInRange = rangeEnd - rangeStart + 1;
       
-      // Calculate physical pages needed after grouping multiple document pages onto one physical side
       const physicalSidesNeeded = Math.ceil(pagesInRange / pagesPerSheet);
-
-      // Effective sheets considering double-sided (only half sheets used)
       const effectiveSheets = sides === 'double' ? Math.ceil(physicalSidesNeeded / 2) : physicalSidesNeeded;
       totalPrintedSheets += effectiveSheets * copies;
 
-      // Base price per sheet from shop with fallbacks
       const sidePriceKey = sides === 'double' ? 'doubleSided' : 'singleSided';
       const shopPricing = shop.pricing || {};
       const colorPricing = shopPricing[colorMode] || shopPricing['bw'] || {};
@@ -80,41 +58,32 @@ const calculateOrderPrice = (documents, shop, additionalServices = {}, globalCom
     subtotal += docPrice;
   });
 
-  // Additional services with updated pricing
+  // Additional services (spiral, lamination, etc.)
   let additionalCharge = 0;
   const totalDocs = documents.length;
 
   if (additionalServices.spiralBinding) {
-    additionalCharge += (shop.pricing.bindingPerDocument || 30) * totalDocs;
+    additionalCharge += (shop.pricing?.bindingPerDocument || 30) * totalDocs;
   }
   if (additionalServices.lamination) {
-    additionalCharge += (shop.pricing.laminationPerPage || 10) * totalPrintedSheets;
+    additionalCharge += (shop.pricing?.laminationPerPage || 10) * totalPrintedSheets;
   }
   if (additionalServices.urgentPrinting) {
-    additionalCharge += Math.ceil(subtotal * 0.2); // 20% urgent surcharge
+    additionalCharge += Math.ceil(subtotal * 0.2);
   }
 
-
-
-  // Determine effective commission rate:
-  // Per-shop override takes priority; fall back to global default.
-  const effectiveCommissionRate = (shop.platformMargin > 0)
-    ? shop.platformMargin
-    : (globalCommissionRate || 0);
-
-  // Platform commission amount (added on top — customer pays this)
-  const platformMarginAmount = Math.ceil(((subtotal + additionalCharge) * effectiveCommissionRate) / 100);
-
-  const total = subtotal + additionalCharge + platformMarginAmount;
-  // Shop receives the base amount; platform keeps the commission
+  // Shop receives 100% of printing and binding charges
   const shopReceivable = subtotal + additionalCharge;
+
+  // Total student payment = Shop Receivable + Admin Fee
+  const total = shopReceivable + totalAdminFee;
 
   return {
     subtotal,
     documentPrices,
     additionalCharge,
-    platformMargin: platformMarginAmount,
-    effectiveCommissionRate,
+    platformMargin: totalAdminFee, // ₹1 per doc with > 5 pages
+    adminFee: totalAdminFee,
     total,
     shopReceivable,
   };

@@ -10,14 +10,17 @@ const createRazorpayOrder = async ({ amount, currency = 'INR', receipt, notes = 
   // Razorpay minimum is ₹1 (100 paise)
   const amountInPaise = Math.max(Math.round(amount * 100), 100);
   try {
-    return await razorpay.orders.create({
+    const payload = {
       amount: amountInPaise,
       currency,
       receipt,
       notes,
-    });
+    };
+    if (transfers && Array.isArray(transfers) && transfers.length > 0) {
+      payload.transfers = transfers;
+    }
+    return await razorpay.orders.create(payload);
   } catch (err) {
-    // Check if it's an authentication error
     if (err.statusCode === 401 || err.error?.code === 'AUTHENTICATION_ERROR') {
       const msg = 'Payment gateway authentication failed. Please contact support.';
       throw new Error(`Payment gateway error: ${msg}`);
