@@ -55,9 +55,59 @@ const errorRoutes = require('./routes/error.routes');
 const app = express();
 const server = http.createServer(app);
 
+// ─── 1. TRUST PROXY ──────────────────────────────────────────────────────────
+app.set('trust proxy', 1);
+
+// ─── 2. CORS (MUST BE FIRST BEFORE ANY OTHER MIDDLEWARE OR REDIRECTS) ─────────
+const rawFrontendUrls = (process.env.FRONTEND_URL || '')
+  .split(',')
+  .map(u => u.trim().replace(/\/$/, ''))
+  .filter(Boolean);
+
+const allowedOriginsList = [
+  ...rawFrontendUrls,
+  'https://pratibimb.online',
+  'https://www.pratibimb.online',
+  'http://pratibimb.online',
+  'http://www.pratibimb.online',
+  'http://localhost:3000',
+  'http://localhost:5173',
+  'http://127.0.0.1:3000',
+  'http://127.0.0.1:5173'
+];
+
+const corsOptions = {
+  origin: (origin, callback) => {
+    // 1. Allow non-browser requests (no origin header: mobile apps, print agent, health checks, curl, webhooks)
+    if (!origin) return callback(null, true);
+
+    // 2. Allow exact matches or any *.pratibimb.online subdomain
+    if (
+      allowedOriginsList.includes(origin) ||
+      origin.endsWith('.pratibimb.online') ||
+      origin.includes('pratibimb.online') ||
+      process.env.NODE_ENV !== 'production'
+    ) {
+      return callback(null, true);
+    }
+
+    logger.warn(`CORS blocked unknown origin: ${origin}`);
+    return callback(null, false);
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-razorpay-signature', 'Idempotency-Key', 'x-csrf-token', 'X-Requested-With'],
+  exposedHeaders: ['x-new-token', 'x-refresh-token'],
+  maxAge: 86400,
+};
+
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
+
+
 // Trust reverse proxy (Render, Railway, nginx) for correct req.ip
 if (process.env.NODE_ENV === 'production') {
-  app.set('trust proxy', 1);
+  
 }
 
 // ─── Sentry Request Handler (must be first) ────────────────────────────────────
@@ -122,84 +172,6 @@ app.use(securityMiddleware.detectSuspiciousActivity); // Pattern-based threat de
 app.use(securityMiddleware.fingerprintRequest);       // Bot detection
 app.use(securityMiddleware.isHoneypotIp);            // Block known bad actors
 app.use(securityMiddleware.geoBlock);                // Geographic restrictions
-
-// ─── CORS ────────────────────────────────────────────────────────────────────
-const rawFrontendUrls = (process.env.FRONTEND_URL || '')
-  .split(',')
-  .map(u => u.trim().replace(/\/$/, ''))
-  .filter(Boolean);
-
-const allowedOrigins = new Set([
-  ...rawFrontendUrls,
-  'https://pratibimb.online',
-  'https://www.pratibimb.online',
-  'http://localhost:3000',
-  'http://localhost:5173',
-  'http://127.0.0.1:3000',
-  'http://127.0.0.1:5173'
-]);
-
-const corsOptions = {
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'x-razorpay-signature', 'Idempotency-Key', 'x-csrf-token'],
-  exposedHeaders: ['x-new-token', 'x-refresh-token'],
-  maxAge: 3600,
-};
-
-app.use((req, res, next) => {
-  const isAgentRoute      = req.path.startsWith('/api/agent');
-  const isHealthRoute     = req.path === '/health' || req.path === '/';   // Render pings both
-  const isAuthRoute       = req.path.startsWith('/api/auth');
-  const isPaymentWebhook  = req.path.startsWith('/api/payments/webhook');
-  const isFavicon         = req.path === '/favicon.ico';                  // Browser auto-request, no origin
-  const isPrintAgentRequest = req.path.startsWith('/api/orders') || 
-                              req.path.startsWith('/api/printers') ||
-                              req.path.startsWith('/api/notifications') ||
-                              req.path.startsWith('/api/shops');
-  
-  corsOptions.origin = (origin, callback) => {
-    // Allow requests with no Origin header for:
-    // health checks, agent routes, auth routes, webhooks, print-agent (Electron app), favicon
-    if (!origin) {
-      if (
-        isHealthRoute     ||
-        isAgentRoute      ||
-        isAuthRoute       ||
-        isPaymentWebhook  ||
-        isPrintAgentRequest ||
-        isFavicon         ||
-        process.env.NODE_ENV !== 'production'
-      ) {
-        return callback(null, true);
-      }
-      // Log but return 403, NOT a thrown Error (avoids 500)
-      logger.warn(`CORS blocked: null origin for ${req.method} ${req.path}`);
-      return callback(null, false);   // false = blocked, no exception
-    }
-
-    // Whitelist check
-    if (
-      allowedOrigins.has(origin) ||
-      origin === 'https://pratibimb.online' ||
-      origin === 'https://www.pratibimb.online' ||
-      origin.endsWith('.pratibimb.online')
-    ) {
-      return callback(null, true);
-    }
-
-    // Development: allow all origins
-    if (process.env.NODE_ENV !== 'production') {
-      return callback(null, true);
-    }
-
-    // Production: reject unknown origins (return false, not an Error)
-    logger.warn(`CORS blocked: ${origin} for ${req.method} ${req.path}`);
-    callback(null, false);
-  };
-
-  cors(corsOptions)(req, res, next);
-});
 
 // ─── Request Timeout ──────────────────────────────────────────────────────────
 // Prevents hung requests from holding connections indefinitely.
