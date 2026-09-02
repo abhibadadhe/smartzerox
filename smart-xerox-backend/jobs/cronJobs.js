@@ -28,296 +28,33 @@ async function deleteOrderS3Files(order) {
 }
 
 /**
- * Check for expiring orders - run every 30 minutes
- * Notify users/shops 1 hour before expiry
- */
-const checkExpiringOrders = cron.schedule('*/30 * * * *', async () => {
-  // Distributed lock: 29 min TTL (slightly less than interval to avoid overlap)
-  if (!(await acquireLock('checkExpiringOrders', 29 * 60 * 1000))) return;
-  try {
-    const oneHourFromNow = moment().add(1, 'hour').toDate();
-    const now = new Date();
-
-    const expiringOrders = await Order.find({
-      status: { $in: ['paid', 'accepted', 'printing', 'ready'] },
-      'expiry.expiresAt': { $gte: now, $lte: oneHourFromNow },
-      'expiry.extended': false,
-    }).select('_id orderNumber user shop expiry');
-
-    for (const order of expiringOrders) {
-      const minutesLeft = Math.round((order.expiry.expiresAt - now) / 60000);
-
-      await createNotification({
-        recipient: order.user,
-        type: 'order_expiring_soon',
-        title: '⏰ Order Expiring Soon!',
-        message: `Your order #${order.orderNumber} expires in ${minutesLeft} minutes. Collect or extend now!`,
-        order: order._id,
-        priority: 'high',
-      });
-
-      emitToUser(order.user.toString(), 'order:expiring_soon', {
-        orderId: order._id,
-        orderNumber: order.orderNumber,
-        expiresAt: order.expiry.expiresAt,
-        minutesLeft,
-      });
-    }
-
-    if (expiringOrders.length > 0) {
-      logger.info(`Expiry alerts sent for ${expiringOrders.length} orders`);
-    }
-  } catch (err) {
-    logger.error('Expiry check cron error:', err);
-  }
-}, { scheduled: false });
-
-/**
- * Expire overdue orders - run every 15 minutes
- * Uses bulkWrite for efficiency under load instead of individual saves
- */
-const expireOrders = cron.schedule('*/15 * * * *', async () => {
-  // Distributed lock: 14 min TTL
-  if (!(await acquireLock('expireOrders', 14 * 60 * 1000))) return;
-  try {
-    const now = new Date();
-
-    // ✅ FIX #4: Exclude 'printing' status to prevent mid-print file deletion
-    // Orders in 'printing' should complete before expiry check
-    // Use lean() for the query — we only need _id, user, shop, orderNumber for notifications
-    const expiredOrders = await Order.find({
-      status: { $in: ['paid', 'accepted', 'ready'] }, // Removed 'printing'
-      'expiry.expiresAt': { $lt: now },
-    }).select('_id orderNumber user shop documents payment pricing').lean();
-
-    // Log if any printing orders are past expiry (for monitoring)
-    const stalePrintingOrders = await Order.countDocuments({
-      status: 'printing',
-      'expiry.expiresAt': { $lt: now },
-    });
-    if (stalePrintingOrders > 0) {
-      logger.warn(`⚠️ ${stalePrintingOrders} printing order(s) past expiry (waiting for completion)`);
-    }
-
-    if (expiredOrders.length === 0) return;
-
-    // Bulk update all statuses in one DB round-trip
-    const ids = expiredOrders.map(o => o._id);
-    await Order.updateMany(
-      { _id: { $in: ids } },
-      {
-        $set:  { status: 'expired' },
-        $push: { statusHistory: { status: 'expired', note: 'Order expired automatically', timestamp: now } },
-      }
-    );
-
-    // S3 cleanup + notifications + auto-refund in parallel batches
-    await Promise.allSettled(expiredOrders.map(async (order) => {
-      // Delete S3 files
-      for (const doc of order.documents) {
-        if (!doc.s3Key) continue;
-        try {
-          await deleteFile(doc.s3Key);
-          await Order.updateOne(
-            { _id: order._id, 'documents._id': doc._id },
-            { $set: { 'documents.$.s3Key': null } }
-          );
-        } catch (err) {
-          logger.warn(`S3 delete failed for key ${doc.s3Key}: ${err.message}`);
-        }
-      }
-
-      // ── FIX #6: Auto-refund on expiry for paid orders ──────────────────────
-      // Only refund if payment was captured and no refund already exists
-      if (order.payment?.status === 'paid' && order.payment?.razorpayPaymentId) {
-        try {
-          const Payment = require('../models/Payment');
-          const existingPayment = await Payment.findOne({ order: order._id });
-          const alreadyRefunded = existingPayment?.refund?.razorpayRefundId;
-
-          if (!alreadyRefunded) {
-            const { razorpay } = require('../config/razorpay');
-            const refund = await withRazorpay(() => razorpay.payments.refund(order.payment.razorpayPaymentId, {
-              amount: Math.round(order.pricing.total * 100),
-              notes: { reason: 'Order expired — auto-refund', orderId: order._id.toString() },
-            }));
-
-            await Order.findByIdAndUpdate(order._id, {
-              $set: {
-                'payment.status': 'refunded',
-                refund: {
-                  amount: order.pricing.total,
-                  razorpayRefundId: refund.id,
-                  reason: 'Order expired — auto-refund',
-                  processedAt: new Date(),
-                },
-              },
-            });
-
-            await Payment.findOneAndUpdate(
-              { order: order._id },
-              { status: 'refunded', 'refund.razorpayRefundId': refund.id, 'refund.amount': order.pricing.total, 'refund.status': 'processed', 'refund.processedAt': new Date() }
-            );
-
-            logger.info(`Auto-refund ₹${order.pricing.total} initiated for expired order ${order.orderNumber}: ${refund.id}`);
-
-            await createNotification({
-              recipient: order.user,
-              type: 'payment_refunded',
-              title: 'Order Expired — Refund Initiated 💰',
-              message: `Your order #${order.orderNumber} expired. Refund of ₹${order.pricing.total} has been initiated and will reflect in 5-7 days.`,
-              order: order._id,
-              priority: 'high',
-            });
-          }
-        } catch (refundErr) {
-          logger.error(`Auto-refund failed for expired order ${order.orderNumber}: ${refundErr.message}`);
-          // Notify user to contact support if auto-refund fails
-          await createNotification({
-            recipient: order.user,
-            type: 'order_expired',
-            title: 'Order Expired',
-            message: `Your order #${order.orderNumber} has expired. Please contact support for a refund.`,
-            order: order._id,
-            priority: 'high',
-          });
-        }
-      } else {
-        // No payment captured — just notify
-        await createNotification({
-          recipient: order.user,
-          type: 'order_expired',
-          title: 'Order Expired',
-          message: `Your order #${order.orderNumber} has expired. Contact support for refund queries.`,
-          order: order._id,
-          priority: 'high',
-        });
-      }
-
-      emitToUser(order.user.toString(), 'order:expired', { orderId: order._id, orderNumber: order.orderNumber });
-      emitToShop(order.shop.toString(), 'order:expired', { orderId: order._id, orderNumber: order.orderNumber });
-    }));
-
-    logger.info(`Expired ${expiredOrders.length} orders`);
-  } catch (err) {
-    logger.error('Order expiry cron error:', err);
-  }
-}, { scheduled: false });
-
-/**
- * Expire pending payments older than 12 hours - run every 30 minutes
- */
-const expirePendingPayments = cron.schedule('*/30 * * * *', async () => {
-  // Distributed lock: 29 min TTL
-  if (!(await acquireLock('expirePendingPayments', 29 * 60 * 1000))) return;
-  try {
-    const twelveHoursAgo = moment().subtract(12, 'hours').toDate();
-    const pendingOrders = await Order.find({
-      status: 'pending_payment',
-      createdAt: { $lt: twelveHoursAgo },
-    });
-
-    for (const order of pendingOrders) {
-      order.status = 'cancelled';
-      order.statusHistory.push({
-        status: 'cancelled',
-        note: 'Order cancelled: Payment pending for over 12 hours',
-        timestamp: new Date(),
-      });
-      await order.save();
-
-      // Delete S3 files since payment failed
-      await deleteOrderS3Files(order);
-    }
-
-    if (pendingOrders.length > 0) {
-      logger.info(`Cancelled ${pendingOrders.length} pending payments older than 12 hours`);
-    }
-  } catch (err) {
-    logger.error('Pending payment expiry cron error:', err);
-  }
-}, { scheduled: false });
-
-/**
- * S3 cleanup — runs daily at 2 AM
- *
- * Deletes files for:
- *   - picked_up orders older than 24h (printing done, no longer needed)
- *   - rejected orders older than 24h  (never printed, safe to delete)
- *   - refunded orders older than 24h
- *   - expired/cancelled orders older than 7 days (safety net — should already be deleted)
- *
- * Skips docs where s3Key is already null (already cleaned up).
- * Nulls out s3Key after deletion to prevent re-runs hitting the same key.
- */
-const cleanupOldFiles = cron.schedule('0 2 * * *', async () => {
-  // Distributed lock: 55 min TTL (daily job, generous window)
-  if (!(await acquireLock('cleanupOldFiles', 55 * 60 * 1000))) return;
-  try {
-    let totalDeleted = 0;
-
-    // ── Tier 1: picked_up / rejected / refunded — delete after 24h ──────────
-    const oneDayAgo = moment().subtract(24, 'hours').toDate();
-    const tier1Orders = await Order.find({
-      status:    { $in: ['picked_up', 'rejected', 'refunded'] },
-      updatedAt: { $lt: oneDayAgo },
-      'documents.s3Key': { $ne: null }, // only orders that still have files
-    });
-
-    for (const order of tier1Orders) {
-      totalDeleted += await deleteOrderS3Files(order);
-    }
-
-    // ── Tier 2: expired / cancelled — safety net after 7 days ───────────────
-    // (should already be deleted by immediate cron, but catches any that slipped through)
-    const sevenDaysAgo = moment().subtract(7, 'days').toDate();
-    const tier2Orders = await Order.find({
-      status:    { $in: ['expired', 'cancelled'] },
-      updatedAt: { $lt: sevenDaysAgo },
-      'documents.s3Key': { $ne: null },
-    });
-
-    for (const order of tier2Orders) {
-      totalDeleted += await deleteOrderS3Files(order);
-    }
-
-    if (totalDeleted > 0) {
-      logger.info(`S3 cleanup: deleted ${totalDeleted} file(s) from ${tier1Orders.length + tier2Orders.length} order(s)`);
-    } else {
-      logger.info('S3 cleanup: nothing to delete');
-    }
-  } catch (err) {
-    logger.error('S3 cleanup cron error:', err);
-  }
-}, { scheduled: false });
-
-/**
- * 1-Month Order Document Data Archival — runs daily at 3 AM
+ * 15-Day Order Document Data & Storage Archival — runs daily at 3 AM
  * 
- * Resets heavy file document data after 30 days while 100% preserving
- * all financial revenue data (pricing totals, payments, shop balance, settlements).
+ * Automatically deletes heavy PDF/DOCX/image files from storage after 15 days
+ * while 100% preserving all financial revenue data (pricing totals, payments, shop receivable, settlements, order numbers).
  */
-const archiveOneMonthOldOrders = cron.schedule('0 3 * * *', async () => {
-  if (!(await acquireLock('archiveOneMonthOldOrders', 55 * 60 * 1000))) return;
+const archiveFifteenDayOldOrders = cron.schedule('0 3 * * *', async () => {
+  if (!(await acquireLock('archiveFifteenDayOldOrders', 55 * 60 * 1000))) return;
   try {
-    const thirtyDaysAgo = moment().subtract(30, 'days').toDate();
+    const fifteenDaysAgo = moment().subtract(15, 'days').toDate();
     
-    // Find all orders older than 30 days that have not been archived yet
+    // Find all orders older than 15 days that have not been file-archived yet
     const oldOrders = await Order.find({
-      createdAt: { $lt: thirtyDaysAgo },
+      createdAt: { $lt: fifteenDaysAgo },
       dataArchived: { $ne: true }
     });
 
     let count = 0;
     for (const order of oldOrders) {
-      // Delete any associated S3 files
+      // 1. Delete associated uploaded files from S3/disk
       await deleteOrderS3Files(order);
 
-      // Strip heavy document file payloads while keeping basic metadata
+      // 2. Strip heavy storage URLs & keys while keeping basic document metadata & pages
       order.documents = (order.documents || []).map(doc => ({
         _id: doc._id,
         originalName: doc.originalName || 'Archived Document',
         pageCount: doc.pageCount || 0,
+        detectedPages: doc.detectedPages || 0,
         s3Key: null,
         s3Url: null,
         printingRanges: doc.printingRanges || []
@@ -326,15 +63,15 @@ const archiveOneMonthOldOrders = cron.schedule('0 3 * * *', async () => {
       order.dataArchived = true;
       order.archivedAt = new Date();
 
-      // Save without changing pricing or revenue
+      // 3. Save without changing pricing, payments, or revenue
       await order.save({ validateBeforeSave: false });
       count++;
     }
 
-    // ── Also archive 30-day old Kit Orders ─────────────────────────────────
+    // ── Also archive 15-day old Kit Orders ─────────────────────────────────
     const KitOrder = require('../modules/kit/kit.model');
     const oldKitOrders = await KitOrder.find({
-      createdAt: { $lt: thirtyDaysAgo },
+      createdAt: { $lt: fifteenDaysAgo },
       dataArchived: { $ne: true }
     });
 
@@ -356,10 +93,10 @@ const archiveOneMonthOldOrders = cron.schedule('0 3 * * *', async () => {
     }
 
     if (count > 0 || kitCount > 0) {
-      logger.info(`📦 1-Month Archival: Reset file data for ${count} standard order(s) and ${kitCount} kit order(s) (>30 days old) while preserving all revenue records.`);
+      logger.info(`📦 15-Day Archival: Deleted file storage for ${count} order(s) and ${kitCount} kit order(s) (>15 days old) while 100% preserving all revenue & payment records.`);
     }
   } catch (err) {
-    logger.error('1-Month order archival cron error:', err);
+    logger.error('15-Day order archival cron error:', err);
   }
 }, { scheduled: false });
 
@@ -736,7 +473,7 @@ const startCronJobs = () => {
   checkExpiringOrders.start();
   expireOrders.start();
   cleanupOldFiles.start();
-  archiveOneMonthOldOrders.start();
+  archiveFifteenDayOldOrders.start();
   expirePendingPayments.start();
   // autoHideOldOrders.start(); // Disabled: keep all orders visible
   autoRetryIncompleteJobs.start();
@@ -753,7 +490,7 @@ const stopCronJobs = () => {
   checkExpiringOrders.stop();
   expireOrders.stop();
   cleanupOldFiles.stop();
-  archiveOneMonthOldOrders.stop();
+  archiveFifteenDayOldOrders.stop();
   expirePendingPayments.stop();
   autoHideOldOrders.stop();
   autoRetryIncompleteJobs.stop();
