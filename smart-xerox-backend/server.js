@@ -468,7 +468,22 @@ const startServer = async () => {
     // Initialize Redis (optional - for multi-instance deployments)
     await initRedis();
 
-    await connectDB();
+    await // ─── Un-hide all historical orders on startup ────────────────────────────────
+connectDB().then(async () => {
+  try {
+    const Order = require('./models/Order');
+    const result = await Order.updateMany(
+      { $or: [{ hiddenFromShop: true }, { hiddenFromUser: true }] },
+      { $set: { hiddenFromShop: false, hiddenFromUser: false } }
+    );
+    if (result.modifiedCount > 0) {
+      logger.info(`📦 Un-hid ${result.modifiedCount} historical orders so they are fully visible on dashboards`);
+    }
+  } catch (err) {
+    logger.warn(`Order un-hide migration warning: ${err.message}`);
+  }
+});
+
     logger.info('✅ MongoDB Connected');
 
     server.listen(PORT, () => {

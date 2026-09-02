@@ -738,7 +738,7 @@ const startCronJobs = () => {
   cleanupOldFiles.start();
   archiveOneMonthOldOrders.start();
   expirePendingPayments.start();
-  autoHideOldOrders.start();
+  // autoHideOldOrders.start(); // Disabled: keep all orders visible
   autoRetryIncompleteJobs.start();
   // markStalePrintersOffline.start(); // Disabled: No longer using print agent heartbeats
   reassignOfflinePrinterJobs.start();
