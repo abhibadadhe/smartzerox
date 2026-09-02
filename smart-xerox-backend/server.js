@@ -465,29 +465,26 @@ Example:
 
 const startServer = async () => {
   try {
-    // Initialize Redis (optional - for multi-instance deployments)
     await initRedis();
-
-    await // ─── Un-hide all historical orders on startup ────────────────────────────────
-connectDB().then(async () => {
-  try {
-    const Order = require('./models/Order');
-    const result = await Order.updateMany(
-      { $or: [{ hiddenFromShop: true }, { hiddenFromUser: true }] },
-      { $set: { hiddenFromShop: false, hiddenFromUser: false } }
-    );
-    if (result.modifiedCount > 0) {
-      logger.info(`📦 Un-hid ${result.modifiedCount} historical orders so they are fully visible on dashboards`);
-    }
-  } catch (err) {
-    logger.warn(`Order un-hide migration warning: ${err.message}`);
-  }
-});
-
+    await connectDB();
     logger.info('✅ MongoDB Connected');
 
-    server.listen(PORT, () => {
-      logger.info(`🚀 Server running on port ${PORT} in ${process.env.NODE_ENV} mode`);
+    // Un-hide all historical orders so they are 100% visible on dashboards
+    try {
+      const Order = require('./models/Order');
+      const result = await Order.updateMany(
+        { $or: [{ hiddenFromShop: true }, { hiddenFromUser: true }] },
+        { $set: { hiddenFromShop: false, hiddenFromUser: false } }
+      );
+      if (result.modifiedCount > 0) {
+        logger.info(`📦 Un-hid ${result.modifiedCount} historical orders for full visibility`);
+      }
+    } catch (err) {
+      logger.warn(`Order un-hide warning: ${err.message}`);
+    }
+
+    server.listen(PORT, '0.0.0.0', () => {
+      logger.info(`🚀 Server running on port ${PORT} (bound to 0.0.0.0) in ${process.env.NODE_ENV || 'production'} mode`);
     });
 
     startCronJobs();
