@@ -38,7 +38,12 @@ axios.interceptors.response.use(
   async (error) => {
     if (error.response && error.response.status === 401) {
       console.warn('⚠️ Token expired or unauthorized. Re-authenticating with cloud...');
-      await 
+      await loginAndConnect();
+    }
+    return Promise.reject(error);
+  }
+);
+
 // ─── PERIODIC FLEET HEARTBEAT (Keeps all 6 printers online & active) ─────────
 setInterval(async () => {
   if (!token || !config.printers || config.printers.length === 0) return;
@@ -66,12 +71,6 @@ setInterval(async () => {
     // Silent background heartbeat retry
   }
 }, 20000); // Every 20 seconds
-
-loginAndConnect();
-    }
-    return Promise.reject(error);
-  }
-);
 
 async function loginAndConnect() {
   console.log('=====================================================');
@@ -271,6 +270,40 @@ function convertOfficeToPdf(inputFilePath, outputPdfPath) {
  * Stamps the Order Number (e.g., "#4") vertically in the bottom-left margin
  * so the shopkeeper and student can easily identify and separate orders!
  */
+
+/**
+ * In-Memory PDF Page Range Slicer
+ * Extracts only requested page ranges (e.g. 3-7) into a fresh PDF buffer
+ */
+async function slicePdfPageRange(pdfBuffer, rangeStart, rangeEnd) {
+  if (!rangeStart && !rangeEnd) return pdfBuffer;
+  try {
+    const { PDFDocument } = require('pdf-lib');
+    const srcDoc = await PDFDocument.load(pdfBuffer, { ignoreEncryption: true });
+    const totalPages = srcDoc.getPageCount();
+    
+    const start = Math.max(1, Math.min(rangeStart || 1, totalPages));
+    const end = Math.max(start, Math.min(rangeEnd || totalPages, totalPages));
+
+    if (start === 1 && end === totalPages) return pdfBuffer;
+
+    const newDoc = await PDFDocument.create();
+    const pageIndices = [];
+    for (let i = start; i <= end; i++) {
+      pageIndices.push(i - 1);
+    }
+
+    const copiedPages = await newDoc.copyPages(srcDoc, pageIndices);
+    copiedPages.forEach(p => newDoc.addPage(p));
+
+    const resultBytes = await newDoc.save();
+    return Buffer.from(resultBytes);
+  } catch (err) {
+    console.warn(`⚠️ Page slicing fallback: ${err.message}`);
+    return pdfBuffer;
+  }
+}
+
 async function stampOrderNumberOnPdf(pdfBuffer, orderNumber) {
   if (!orderNumber) return pdfBuffer;
   try {
@@ -443,8 +476,14 @@ async function handlePrintJob(orderData) {
         const sideStr = isDoubleSided ? '📖 DOUBLE-SIDED (Back-to-Back)' : '📄 SINGLE-SIDED';
         const pagesStr = pageRangeStr ? `Pages ${pageRangeStr}` : 'All Pages';
 
-        // Stamp order number on margin for easy identification
-        const stampedPdfBuffer = await stampOrderNumberOnPdf(pdfBuffer, order.orderNumber || orderData.orderNumber);
+        // 1. Slice exact requested page range in memory (100% precision)
+        let processedPdfBuffer = pdfBuffer;
+        if (r.rangeStart || r.rangeEnd) {
+          processedPdfBuffer = await slicePdfPageRange(pdfBuffer, r.rangeStart, r.rangeEnd);
+        }
+
+        // 2. Stamp clean order number on margin for easy identification
+        const stampedPdfBuffer = await stampOrderNumberOnPdf(processedPdfBuffer, order.orderNumber || orderData.orderNumber);
         
         console.log(`\n🖨️ [Job ${rIdx + 1}/${ranges.length}] ➔ ${targetPrinter.displayName || targetPrinter.name} (${targetPrinter.ipAddress || 'Windows Driver'})`);
         console.log(`   ⚙️ Config: ${modeStr} | ${sideStr} | ${pagesStr} | Copies: ${copies} | Paper: ${paperSize}`);
