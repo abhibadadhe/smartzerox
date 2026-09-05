@@ -160,6 +160,21 @@ exports.setShopMargin = asyncHandler(async (req, res) => {
   res.status(200).json({ success: true, message: `Platform margin set to ${numMargin}%`, data: { shop } });
 });
 
+// ─── Update Shop Razorpay Route Account (Direct Split Payment) ────────────────
+exports.updateShopRazorpayAccount = asyncHandler(async (req, res) => {
+  const { razorpayAccountId, splitPaymentEnabled } = req.body;
+
+  const updates = {};
+  if (razorpayAccountId !== undefined) updates.razorpayAccountId = razorpayAccountId ? razorpayAccountId.trim() : null;
+  if (splitPaymentEnabled !== undefined) updates.splitPaymentEnabled = Boolean(splitPaymentEnabled);
+
+  const shop = await Shop.findByIdAndUpdate(req.params.id, updates, { new: true });
+  if (!shop) throw new AppError('Shop not found', 404);
+
+  logger.info(`Admin updated Razorpay Route account for shop ${shop.name} (${shop._id}): accountId=${shop.razorpayAccountId}, splitEnabled=${shop.splitPaymentEnabled}`);
+  res.status(200).json({ success: true, message: 'Shop Razorpay Route settings updated', data: { shop } });
+});
+
 // ─── Get All Orders ───────────────────────────────────────────────────────────
 exports.getAllOrders = asyncHandler(async (req, res) => {
   const { status, page = 1, limit = 20, from, to, shopId } = req.query;

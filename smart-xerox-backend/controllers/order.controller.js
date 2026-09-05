@@ -320,11 +320,27 @@ exports.createOrder = asyncHandler(async (req, res) => {
   const receipt = `order_${Date.now()}`;
   let razorpayOrder;
   try {
+    // ── Razorpay Route Split Payment ──────────────────────────────────────────
+    // If shopkeeper has a Linked Account (acc_xxx) and split payment is enabled:
+    // Route shopReceivable directly to shopkeeper's linked account.
+    // The remaining amount (₹1 platform fee) stays in Admin's Razorpay account.
+    const transfers = [];
+    if (shop.razorpayAccountId && shop.splitPaymentEnabled !== false && shopReceivable > 0) {
+      transfers.push({
+        account: shop.razorpayAccountId,
+        amount: Math.round(shopReceivable * 100), // in paise (e.g. ₹10.00 -> 1000 paise)
+        currency: 'INR',
+        on_hold: 0, // 0 = transfer immediately to shopkeeper linked account upon capture
+      });
+      logger.info(`Razorpay Route Split: transferring ₹${shopReceivable} to shop ${shop.razorpayAccountId}, admin retains ₹${pageFee || 0}`);
+    }
+
     razorpayOrder = await withRazorpay(() => createRazorpayOrder({
       amount: total,
       currency: 'INR',
       receipt,
-      notes: { shopId, userId: req.user.id },
+      notes: { shopId, userId: req.user.id, pageFee: String(pageFee || 0) },
+      transfers,
     }));
   } catch (err) {
     logger.error(`Razorpay order creation failed: ${err.message}`);

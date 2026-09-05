@@ -48,6 +48,8 @@ const ShopProfile = ({ shopData, setShopData }) => {
       pincode: shopData?.address?.pincode || '',
     },
     upiId: shopData?.upiId || '',
+    razorpayAccountId: shopData?.razorpayAccountId || '',
+    splitPaymentEnabled: shopData?.splitPaymentEnabled !== false,
     bankDetails: {
       accountHolderName: shopData?.bankDetails?.accountHolderName || '',
       accountNumber: shopData?.bankDetails?.accountNumber || '',
@@ -71,6 +73,8 @@ const ShopProfile = ({ shopData, setShopData }) => {
         phone: profile.phone,
         address: profile.address,
         upiId: profile.upiId,
+        razorpayAccountId: profile.razorpayAccountId,
+        splitPaymentEnabled: profile.splitPaymentEnabled,
         bankDetails: profile.bankDetails,
         pricing,
         otpPlacement,
@@ -427,6 +431,56 @@ const ShopProfile = ({ shopData, setShopData }) => {
                   className="w-full border-gray-300 rounded-lg shadow-sm focus:ring-orange-500 focus:border-orange-500 p-2 border"
                 />
               </div>
+            </div>
+          </div>
+
+          {/* ── Razorpay Route Direct Split Payment ────────────────────────── */}
+          <div className="pt-4 border-t border-gray-50">
+            <div className="flex items-center justify-between mb-2">
+              <div>
+                <h4 className="font-medium text-gray-700 flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-green-500"></span>
+                  Razorpay Route (Direct Payment Split)
+                </h4>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  When enabled, printing earnings go directly to your linked account on order placement; ₹1 platform fee goes to Admin.
+                </p>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={profile.splitPaymentEnabled}
+                  onChange={(e) =>
+                    setProfile((prev) => ({
+                      ...prev,
+                      splitPaymentEnabled: e.target.checked,
+                    }))
+                  }
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-600"></div>
+              </label>
+            </div>
+
+            <div className="mt-3">
+              <label className="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">
+                Razorpay Linked Account ID (e.g. acc_xxxxxxxxxxxx)
+              </label>
+              <input
+                type="text"
+                placeholder="e.g. acc_Lz89abc1234567"
+                value={profile.razorpayAccountId}
+                onChange={(e) =>
+                  setProfile((prev) => ({
+                    ...prev,
+                    razorpayAccountId: e.target.value,
+                  }))
+                }
+                className="w-full md:w-1/2 border-gray-300 rounded-lg shadow-sm focus:ring-orange-500 focus:border-orange-500 p-2 border font-mono text-sm"
+              />
+              <p className="text-xs text-gray-400 mt-1">
+                Generated from Razorpay Dashboard → Route → Linked Accounts.
+              </p>
             </div>
           </div>
         </div>
