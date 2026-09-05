@@ -45,23 +45,26 @@ const ShopOrders = ({ handleReject, triggerPrint, handleVerifyPickup, handleUpda
     // Date range filter
     if (filterDay !== 'all') {
       const now = new Date();
-      const fmt = (d) => d.toISOString().split('T')[0];
+      // Use local timezone formatting (YYYY-MM-DD) to prevent UTC date shift
+      const fmt = (d) => {
+        const year = d.getFullYear();
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+      };
 
       if (filterDay === 'today') {
         params.set('date', fmt(now));
       } else if (filterDay === 'yesterday') {
-        const y = new Date(now); y.setDate(y.getDate() - 1);
+        const y = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
         params.set('date', fmt(y));
       } else if (filterDay === 'this_week') {
-        const start = new Date(now);
-        start.setDate(start.getDate() - start.getDay()); // Sunday
+        const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - now.getDay()); // Sunday
         params.set('startDate', fmt(start));
         params.set('endDate', fmt(now));
       } else if (filterDay === 'last_week') {
-        const end = new Date(now);
-        end.setDate(end.getDate() - end.getDay() - 1); // Last Saturday
-        const start = new Date(end);
-        start.setDate(start.getDate() - 6); // Previous Sunday
+        const end = new Date(now.getFullYear(), now.getMonth(), now.getDate() - now.getDay() - 1); // Last Saturday
+        const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - now.getDay() - 7); // Previous Sunday
         params.set('startDate', fmt(start));
         params.set('endDate', fmt(end));
       } else if (filterDay === 'this_month') {
