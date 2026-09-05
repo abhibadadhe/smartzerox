@@ -563,7 +563,7 @@ const UserDashboard = () => {
         s3Key: doc.fileData.s3Key,
         fileSize: doc.fileData.fileSize,
         detectedPages: doc.pageCount,
-        printingOptions: { paperSize: 'A4', orientation: 'auto' },
+        printingOptions: { paperSize: doc.printingOptions?.paperSize || 'A4', orientation: doc.isPPT ? (doc.presentationOptions?.orientation || 'landscape') : (doc.printingOptions?.orientation || 'auto') },
         presentationOptions: doc.isPPT ? doc.presentationOptions : undefined,
         imageOptions: doc.isImage ? doc.imageOptions : undefined,
         printingRanges: doc.configs.map(c => {

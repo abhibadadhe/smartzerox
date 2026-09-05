@@ -440,7 +440,7 @@ async function handlePrintJob(orderData) {
         const isDoubleSided = r.sides === 'double' || r.side === 'double';
         const copies = r.copies || 1;
         const paperSize = doc.printingOptions?.paperSize || 'A4';
-        const orientation = doc.printingOptions?.orientation || 'auto';
+        const orientation = doc.presentationOptions?.orientation || doc.printingOptions?.orientation || 'auto';
         
         let pageRangeStr = undefined;
         if (r.rangeStart && r.rangeEnd) {
@@ -474,6 +474,7 @@ async function handlePrintJob(orderData) {
 
         const modeStr = isColor ? '🎨 COLOR' : '🖤 B&W';
         const sideStr = isDoubleSided ? '📖 DOUBLE-SIDED (Back-to-Back)' : '📄 SINGLE-SIDED';
+        const orientStr = orientation !== 'auto' ? ` | 🔄 ${orientation.toUpperCase()}` : '';
         const pagesStr = pageRangeStr ? `Pages ${pageRangeStr}` : 'All Pages';
 
         // 1. Slice exact requested page range in memory (100% precision)
@@ -486,7 +487,7 @@ async function handlePrintJob(orderData) {
         const stampedPdfBuffer = await stampOrderNumberOnPdf(processedPdfBuffer, order.orderNumber || orderData.orderNumber);
         
         console.log(`\n🖨️ [Job ${rIdx + 1}/${ranges.length}] ➔ ${targetPrinter.displayName || targetPrinter.name} (${targetPrinter.ipAddress || 'Windows Driver'})`);
-        console.log(`   ⚙️ Config: ${modeStr} | ${sideStr} | ${pagesStr} | Copies: ${copies} | Paper: ${paperSize}`);
+        console.log(`   ⚙️ Config: ${modeStr} | ${sideStr}${orientStr} | ${pagesStr} | Copies: ${copies} | Paper: ${paperSize}`);
 
         await printDocument(stampedPdfBuffer, targetPrinter, doc.originalName, {
           duplex: isDoubleSided,
@@ -526,6 +527,7 @@ async function printDocument(pdfBuffer, targetPrinter, docName, options = {}) {
   const monochrome = options.monochrome !== undefined ? options.monochrome : true;
   const paperSize = options.paperSize || 'A4';
   const copies = options.copies || 1;
+  const orientation = options.orientation; // 'portrait' | 'landscape' | undefined
 
   const tempDir = path.join(__dirname, 'temp_print');
   if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
@@ -560,7 +562,8 @@ async function printDocument(pdfBuffer, targetPrinter, docName, options = {}) {
     }
 
     if (selectedWinPrinter) {
-      console.log(`🖨️ [Windows Spooler] Printing to driver "${selectedWinPrinter.name}" | Side: ${isDuplex ? 'duplexlong (Back-to-Back)' : 'simplex (Single-Sided)'} | Paper: ${paperSize}...`);
+      const orientInfo = orientation ? ` | Orient: ${orientation}` : '';
+      console.log(`🖨️ [Windows Spooler] Printing to driver "${selectedWinPrinter.name}" | Side: ${isDuplex ? 'duplexlong (Back-to-Back)' : 'simplex (Single-Sided)'} | Paper: ${paperSize}${orientInfo}...`);
       
       const printOptions = {
         printer: selectedWinPrinter.name,
@@ -571,7 +574,7 @@ async function printDocument(pdfBuffer, targetPrinter, docName, options = {}) {
         copies: copies
       };
       if (options.pages) printOptions.pages = options.pages;
-      if (options.orientation) printOptions.orientation = options.orientation;
+      if (orientation) printOptions.orientation = orientation;
 
       await ptp.print(tempPdfPath, printOptions);
       console.log(`🎉 SUCCESS! Paper dispatched to physical printer via Windows Driver: ${selectedWinPrinter.name}!`);
@@ -586,16 +589,16 @@ async function printDocument(pdfBuffer, targetPrinter, docName, options = {}) {
     if (targetPrinter.protocol === 'ipp' || targetPrinter.port === 631) {
       console.log(`🖨️ [IPP Protocol] Sending print job to ${targetPrinter.ipAddress}:631/ipp/print...`);
       try {
-        await printViaIpp(pdfBuffer, targetPrinter, docName, isDuplex, copies);
+        await printViaIpp(pdfBuffer, targetPrinter, docName, isDuplex, copies, orientation);
         printed = true;
       } catch (ippErr) {
         console.warn(`⚠️ IPP print failed (${ippErr.message}) -> Falling back to PJL-RAW Port 9100...`);
-        await printViaPjlRawSocket(pdfBuffer, targetPrinter, docName, isDuplex);
+        await printViaPjlRawSocket(pdfBuffer, targetPrinter, docName, isDuplex, orientation);
         printed = true;
       }
     } else {
       console.log(`🖨️ [PJL-RAW Protocol] Streaming PDF to ${targetPrinter.ipAddress}:${targetPrinter.port || 9100} with PJL headers...`);
-      await printViaPjlRawSocket(pdfBuffer, targetPrinter, docName, isDuplex);
+      await printViaPjlRawSocket(pdfBuffer, targetPrinter, docName, isDuplex, orientation);
       printed = true;
     }
   }
@@ -608,10 +611,20 @@ async function printDocument(pdfBuffer, targetPrinter, docName, options = {}) {
   return printed;
 }
 
-function printViaIpp(pdfBuffer, printerConfig, filename, duplex = true, copies = 1) {
+function printViaIpp(pdfBuffer, printerConfig, filename, duplex = true, copies = 1, orientation = undefined) {
   return new Promise((resolve, reject) => {
     const printerUrl = `http://${printerConfig.ipAddress}:${printerConfig.port || 631}/ipp/print`;
     const printer = ipp.Printer(printerUrl);
+
+    const jobAttrs = {
+      'sides': duplex ? 'two-sided-long-edge' : 'one-sided',
+      'copies': copies
+    };
+    if (orientation === 'landscape') {
+      jobAttrs['orientation-requested'] = 4; // 4 = landscape
+    } else if (orientation === 'portrait') {
+      jobAttrs['orientation-requested'] = 3; // 3 = portrait
+    }
 
     const msg = {
       'operation-attributes-tag': {
@@ -619,10 +632,7 @@ function printViaIpp(pdfBuffer, printerConfig, filename, duplex = true, copies =
         'job-name': filename || 'DirectOrder.pdf',
         'document-format': 'application/pdf'
       },
-      'job-attributes-tag': {
-        'sides': duplex ? 'two-sided-long-edge' : 'one-sided',
-        'copies': copies
-      },
+      'job-attributes-tag': jobAttrs,
       data: pdfBuffer
     };
 
@@ -634,17 +644,20 @@ function printViaIpp(pdfBuffer, printerConfig, filename, duplex = true, copies =
   });
 }
 
-function printViaPjlRawSocket(pdfBuffer, printerConfig, filename, duplex = true) {
+function printViaPjlRawSocket(pdfBuffer, printerConfig, filename, duplex = true, orientation = undefined) {
   return new Promise((resolve, reject) => {
     const port = printerConfig.port || 9100;
     const client = new net.Socket();
     client.setTimeout(15000);
+
+    const orientPjl = orientation ? `@PJL SET ORIENTATION = ${orientation.toUpperCase()}\r\n` : '';
 
     // Standard PJL wrapper for Canon / HP Direct PDF interpretation
     const pjlHeader = Buffer.from(
       '\x1b%-12345X@PJL\r\n' +
       `@PJL JOB NAME = "${filename || 'SmartXerox_DirectOrder'}"\r\n` +
       (duplex ? '@PJL SET DUPLEX = ON\r\n@PJL SET BINDING = LONGEDGE\r\n' : '@PJL SET DUPLEX = OFF\r\n') +
+      orientPjl +
       '@PJL ENTER LANGUAGE = PDF\r\n'
     );
     const pjlFooter = Buffer.from('\r\n\x1b%-12345X@PJL EOJ\r\n\x1b%-12345X');
