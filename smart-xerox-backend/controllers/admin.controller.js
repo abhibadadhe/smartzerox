@@ -815,7 +815,7 @@ exports.getShopSettlementReport = asyncHandler(async (req, res) => {
         customerName: user?.name || order.customerName || 'Customer',
         customerPhone: user?.phone || order.customerPhone || '',
         totalDocs: orderTotalDocs,
-        totalOrderPages,
+        totalOrderPages: orderTotalPages,
         docsOver5Pages: isOver5Pages ? 1 : 0,
         totalAmount,
         adminMargin,
