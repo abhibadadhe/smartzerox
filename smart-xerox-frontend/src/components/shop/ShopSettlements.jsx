@@ -93,7 +93,9 @@ const ShopSettlements = ({ orders = [], shopData }) => {
             <span className="font-medium">Platform Fees</span>
           </div>
           <h3 className="text-3xl font-bold text-gray-800">₹{totalPlatformFees.toFixed(2)}</h3>
-          <p className="text-sm text-gray-500 mt-2">₹1 per order (&gt;5 pages)</p>
+          <p className="text-sm text-gray-500 mt-2">
+            {shopData?.platformMargin > 0 ? `${shopData.platformMargin}% custom margin` : 'Admin Platform Commission'}
+          </p>
         </div>
       </div>
 

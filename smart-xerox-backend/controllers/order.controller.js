@@ -309,7 +309,7 @@ exports.createOrder = asyncHandler(async (req, res) => {
   const platformSettings = await Settings.getGlobal();
   const globalCommissionRate = platformSettings.defaultCommissionRate || 0;
 
-  const { subtotal, documentPrices, additionalCharge, total, shopReceivable, platformMargin } =
+  const { subtotal, documentPrices, additionalCharge, total, shopReceivable, platformMargin, commissionPercent } =
     calculateOrderPrice(documents, shop, additionalServices, globalCommissionRate);
 
   const orderDocuments = documents.map((doc, i) => ({
@@ -352,6 +352,7 @@ exports.createOrder = asyncHandler(async (req, res) => {
       pricing: {
         subtotal,
         platformMargin,
+        commissionPercent: commissionPercent || 0,
         additionalServicesCharge: additionalCharge,
         total,
         shopReceivable,

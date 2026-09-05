@@ -50,8 +50,21 @@ const calculateOrderPrice = (documents, shop, additionalServices = {}, globalCom
     subtotal += docPrice;
   });
 
-  // Rule: If overall order page count > 5, add ₹1 extra fee for Admin
-  const totalAdminFee = totalOrderPages > 5 ? 1 : 0;
+  // 1. Commission rate %: Shop custom margin takes priority over Global rate
+  const commissionPercent = (shop && shop.platformMargin !== undefined && shop.platformMargin !== null && Number(shop.platformMargin) > 0)
+    ? Number(shop.platformMargin)
+    : Number(globalCommissionRate || 0);
+
+  // 2. Percentage commission amount
+  const percentCommission = commissionPercent > 0 
+    ? Math.round((subtotal * commissionPercent) / 100 * 100) / 100 
+    : 0;
+
+  // 3. Flat page fee: ₹1 extra for admin if order > 5 pages
+  const pageFee = totalOrderPages > 5 ? 1 : 0;
+
+  // Total Platform Fee (Admin Margin) = Percentage Commission + Page Fee
+  const totalAdminFee = Math.round((percentCommission + pageFee) * 100) / 100;
 
   // Additional services (spiral, lamination, etc.)
   let additionalCharge = 0;
@@ -70,14 +83,17 @@ const calculateOrderPrice = (documents, shop, additionalServices = {}, globalCom
   // Shop receives 100% of printing and binding charges
   const shopReceivable = subtotal + additionalCharge;
 
-  // Total student payment = Shop Receivable + Admin Fee
+  // Total student payment = Shop Receivable + Platform Fee
   const total = shopReceivable + totalAdminFee;
 
   return {
     subtotal,
     documentPrices,
     additionalCharge,
-    platformMargin: totalAdminFee, // ₹1 if overall pages > 5, ₹0 if <= 5
+    platformMargin: totalAdminFee,
+    commissionPercent,
+    percentCommission,
+    pageFee,
     adminFee: totalAdminFee,
     totalOrderPages,
     total,
