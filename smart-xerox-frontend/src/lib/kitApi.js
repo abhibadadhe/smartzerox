@@ -26,11 +26,17 @@ export const kitAPI = {
   getMyOrders:     (email, phone)     => kitApi.get('/kit/my-orders', { params: { email, phone } }),
   getOrderStatus:  (id, email, phone) => kitApi.get(`/kit/order/${id}`, { params: { email, phone } }),
 
-  // Shopkeeper
+  // Shopkeeper & Admin actions
   getKitOrders:         (params) => kitApi.get('/kit/shopkeeper/kit-orders', { params }),
-  getSuspiciousOrders:  (params) => kitApi.get('/kit/shopkeeper/suspicious-orders', { params }),  // Fix #15
-  getFraudStats:        ()       => kitApi.get('/kit/shopkeeper/fraud-stats'),                     // Fix #15
-  getOrderCounts:       ()       => kitApi.get('/kit/shopkeeper/order-counts'),                    // Fix #14
+  getSuspiciousOrders:  (params) => kitApi.get('/kit/shopkeeper/suspicious-orders', { params }),
+  getFraudStats:        ()       => kitApi.get('/kit/shopkeeper/fraud-stats'),
+  getOrderCounts:       ()       => kitApi.get('/kit/shopkeeper/order-counts'),
   updateKitOrderStatus: (id, status, note) =>
     kitApi.patch(`/kit/shopkeeper/kit-order/${id}/status`, { status, note }),
+  verifyKitOtp:         (otp)    => kitApi.post('/kit/shopkeeper/verify-otp', { otp }),
+
+  // Admin & Reports
+  reset15Days:          (days = 15) => kitApi.post('/kit/admin/reset-15days', { days }),
+  getStudentReport:     (params)    => kitApi.get('/kit/admin/student-report', { params }),
 };
+

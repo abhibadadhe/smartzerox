@@ -92,4 +92,16 @@ router.post('/shopkeeper/verify-otp',
   ctrl.verifyKitOtp
 );
 
+// ─── Admin / Batch Management Routes ─────────────────────────────────────────
+router.post('/admin/reset-15days',
+  protect, restrictTo('shopkeeper', 'admin'),
+  ctrl.resetFifteenDayKitOrders
+);
+
+router.get('/admin/student-report',
+  protect, restrictTo('shopkeeper', 'admin'),
+  ctrl.getStudentReport
+);
+
 module.exports = router;
+

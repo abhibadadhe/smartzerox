@@ -198,6 +198,49 @@ const archiveFiveDayOldOrders = cron.schedule('0 3 * * *', async () => {
   await runFiveDayArchival();
 }, { scheduled: false });
 
+/**
+ * 15-Day Kit Orders Auto-Reset & Archival
+ * Automatically archives kit orders older than 15 days
+ */
+const runFifteenDayKitArchival = async () => {
+  try {
+    const fifteenDaysAgo = moment().subtract(15, 'days').toDate();
+    const KitOrder = require('../modules/kit/kit.model');
+    const oldKitOrders = await KitOrder.find({
+      createdAt: { $lt: fifteenDaysAgo },
+      dataArchived: { $ne: true }
+    });
+
+    let kitCount = 0;
+    for (const kitOrder of oldKitOrders) {
+      if (kitOrder.screenshotS3Key) {
+        try {
+          await deleteFile(kitOrder.screenshotS3Key);
+          kitOrder.screenshotS3Key = null;
+        } catch (err) {
+          logger.warn(`S3 delete failed for kit screenshot ${kitOrder.screenshotS3Key}: ${err.message}`);
+        }
+      }
+      kitOrder.dataArchived = true;
+      kitOrder.archivedAt = new Date();
+      await kitOrder.save({ validateBeforeSave: false });
+      kitCount++;
+    }
+
+    if (kitCount > 0) {
+      logger.info(`📚 15-Day Kit Reset: Successfully archived ${kitCount} kit order(s) (>15 days old).`);
+    }
+  } catch (err) {
+    logger.error('15-Day kit order archival error:', err);
+  }
+};
+
+const archiveFifteenDayKitOrders = cron.schedule('30 3 * * *', async () => {
+  if (!(await acquireLock('archiveFifteenDayKitOrders', 55 * 60 * 1000))) return;
+  await runFifteenDayKitArchival();
+}, { scheduled: false });
+
+
 
 /**
  * Auto-retry incomplete print jobs after 30 minutes — runs every 15 minutes
@@ -311,6 +354,7 @@ const startCronJobs = () => {
   checkExpiringOrders.start();
   expireOrders.start();
   archiveFiveDayOldOrders.start();
+  archiveFifteenDayKitOrders.start();
   expirePendingPayments.start();
   autoRetryIncompleteJobs.start();
   reassignOfflinePrinterJobs.start();
@@ -318,10 +362,11 @@ const startCronJobs = () => {
   reEmitStaleAcceptedOrders.start();
   checkQueueHealth.start();
   retryWebhooks.start();
-  logger.info('Cron jobs started: expiry alerts (30min), order expiry (15min), 5-day storage archival (daily 3am + startup), pending payment expiry (30min), auto-retry incomplete (15min), reassign offline jobs (10min), orphaned upload cleanup (30min), re-emit stale accepted (5min), queue health check (5min), webhook retry (10min)');
+  logger.info('Cron jobs started: expiry alerts (30min), order expiry (15min), 5-day storage archival (daily 3am + startup), 15-day kit order reset/archival (daily 3:30am + startup), pending payment expiry (30min), auto-retry incomplete (15min), reassign offline jobs (10min), orphaned upload cleanup (30min), re-emit stale accepted (5min), queue health check (5min), webhook retry (10min)');
   
-  // Run initial 5-day storage cleanup on boot
+  // Run initial archival on boot
   runFiveDayArchival().catch(err => logger.error('Initial 5-day archival on boot error:', err));
+  runFifteenDayKitArchival().catch(err => logger.error('Initial 15-day kit archival on boot error:', err));
 };
 
 
@@ -329,6 +374,7 @@ const stopCronJobs = () => {
   checkExpiringOrders.stop();
   expireOrders.stop();
   archiveFiveDayOldOrders.stop();
+  archiveFifteenDayKitOrders.stop();
   expirePendingPayments.stop();
   autoRetryIncompleteJobs.stop();
   reassignOfflinePrinterJobs.stop();
@@ -339,3 +385,4 @@ const stopCronJobs = () => {
 };
 
 module.exports = { startCronJobs, stopCronJobs };
+

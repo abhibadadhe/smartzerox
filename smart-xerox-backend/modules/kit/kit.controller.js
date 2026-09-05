@@ -1,10 +1,11 @@
 const path            = require('path');
 const { v4: uuidv4 }  = require('uuid');
 const { PutObjectCommand } = require('@aws-sdk/client-s3');
+const moment          = require('moment');
 const KitOrder        = require('./kit.model');
 const { COLLEGES, COLLEGE_PARTS, SUBJECTS, NOTES_BY_SUBJECT, FIRST_YEAR_KIT } = require('./kit.data');
 const { asyncHandler, AppError } = require('../../utils/helpers');
-const { s3Client, BUCKET_NAME, getPresignedUrl } = require('../../config/aws');
+const { s3Client, BUCKET_NAME, getPresignedUrl, deleteFile } = require('../../config/aws');
 const { sendEmail } = require('../../utils/email');
 const logger          = require('../../config/logger');
 const { performAdvancedFraudCheckV2 } = require('./kit.advanced-fraud-v2');
@@ -475,3 +476,85 @@ exports.verifyKitOtp = asyncHandler(async (req, res) => {
     data: { order }
   });
 });
+
+// ─── POST /kit/admin/reset-15days ───────────────────────────────────────────
+exports.resetFifteenDayKitOrders = asyncHandler(async (req, res) => {
+  const days = Number(req.body.days || 15);
+  const cutoffDate = moment().subtract(days, 'days').toDate();
+
+  const oldOrders = await KitOrder.find({
+    createdAt: { $lt: cutoffDate },
+    dataArchived: { $ne: true }
+  });
+
+  let archivedCount = 0;
+  for (const order of oldOrders) {
+    if (order.screenshotS3Key) {
+      try {
+        await deleteFile(order.screenshotS3Key);
+        order.screenshotS3Key = null;
+      } catch (err) {
+        logger.warn(`S3 delete failed for kit screenshot ${order.screenshotS3Key}: ${err.message}`);
+      }
+    }
+    order.dataArchived = true;
+    order.archivedAt = new Date();
+    await order.save({ validateBeforeSave: false });
+    archivedCount++;
+  }
+
+  logger.info(`[KitOrder] 15-Day batch archival executed: ${archivedCount} orders archived.`);
+  res.json({
+    success: true,
+    message: `Successfully reset & archived ${archivedCount} kit order(s) older than ${days} days.`,
+    data: { archivedCount, cutoffDate }
+  });
+});
+
+// ─── GET /kit/admin/student-report ──────────────────────────────────────────
+exports.getStudentReport = asyncHandler(async (req, res) => {
+  const { days = 7, status } = req.query;
+  const filter = {};
+  if (days && days !== 'all') {
+    const cutoff = moment().subtract(Number(days), 'days').toDate();
+    filter.createdAt = { $gte: cutoff };
+  }
+  if (status && status !== 'all' && status) {
+    filter.orderStatus = status;
+  }
+
+  const orders = await KitOrder.find(filter)
+    .sort({ createdAt: -1 })
+    .lean();
+
+  const reportData = orders.map((o) => ({
+    orderId: o._id,
+    orderIdShort: o._id.toString().slice(-8).toUpperCase(),
+    name: o.name,
+    phone: o.phone,
+    email: o.email,
+    year: o.year,
+    department: o.department || 'First Year Common',
+    orderType: o.orderType,
+    selectedNotes: (o.selectedNotes || []).map(n => n.title || n.id).join('; ') || 'Full Kit',
+    totalAmount: o.totalAmount,
+    kitOtp: o.kitOtp || '-',
+    paymentStatus: o.paymentStatus,
+    orderStatus: o.orderStatus,
+    transactionId: o.transactionId || '-',
+    fraudScore: o.fraudFlags?.fraudScore || 0,
+    isSuspicious: o.orderStatus === 'Suspicious' || (o.fraudFlags?.fraudScore >= 60),
+    dataArchived: Boolean(o.dataArchived),
+    date: o.createdAt,
+  }));
+
+  res.json({
+    success: true,
+    data: {
+      total: reportData.length,
+      rangeDays: days,
+      report: reportData,
+    }
+  });
+});
+
