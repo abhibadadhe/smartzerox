@@ -302,6 +302,21 @@ const retryWebhooks = cron.schedule('*/10 * * * *', async () => {
   }
 }, { scheduled: false });
 
+/**
+ * Monthly Reset Cron — runs on 1st of every month at midnight (00:00 AM)
+ * Resets Shop OTP counter back to 0 (so 1st order of the new month starts from OTP 1)
+ */
+const monthlyResetOtpCounter = cron.schedule('0 0 1 * *', async () => {
+  if (!(await acquireLock('monthlyResetOtpCounter', 55 * 60 * 1000))) return;
+  try {
+    const Shop = require('../models/Shop');
+    await Shop.updateMany({}, { $set: { otpCounter: 0 } });
+    logger.info('🔄 Monthly Reset: Shop OTP counters reset to 1 for the new month cycle.');
+  } catch (err) {
+    logger.error('Monthly OTP counter reset cron error:', err);
+  }
+}, { scheduled: false });
+
 const startCronJobs = () => {
   checkExpiringOrders.start();
   expireOrders.start();
@@ -313,7 +328,8 @@ const startCronJobs = () => {
   reEmitStaleAcceptedOrders.start();
   checkQueueHealth.start();
   retryWebhooks.start();
-  logger.info('Cron jobs started: expiry alerts (30min), order expiry (15min), 5-day storage archival (daily 3am), pending payment expiry (30min), auto-retry incomplete (15min), reassign offline jobs (10min), orphaned upload cleanup (30min), re-emit stale accepted (5min), queue health check (5min), webhook retry (10min)');
+  monthlyResetOtpCounter.start();
+  logger.info('Cron jobs started: expiry alerts (30min), order expiry (15min), 5-day storage archival (daily 3am), pending payment expiry (30min), auto-retry incomplete (15min), reassign offline jobs (10min), orphaned upload cleanup (30min), re-emit stale accepted (5min), queue health check (5min), webhook retry (10min), monthly OTP reset (1st of month)');
 };
 
 const stopCronJobs = () => {
@@ -327,6 +343,7 @@ const stopCronJobs = () => {
   reEmitStaleAcceptedOrders.stop();
   checkQueueHealth.stop();
   retryWebhooks.stop();
+  monthlyResetOtpCounter.stop();
 };
 
 module.exports = { startCronJobs, stopCronJobs };
