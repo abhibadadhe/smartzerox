@@ -678,36 +678,20 @@ exports.getShopSettlementReport = asyncHandler(async (req, res) => {
 
     let startDate = null;
     let endDate = null;
-    let periodLabel = 'Custom Period';
-    let isMonthClosed = false;
+    let periodLabel = '';
+    let isMonthClosed = true;
 
-    if (month === 'last_month') {
-      const lastMonthDate = moment().subtract(1, 'month');
-      startDate = lastMonthDate.clone().startOf('month').toDate();
-      endDate = lastMonthDate.clone().endOf('month').toDate();
-      periodLabel = `${lastMonthDate.format('MMMM YYYY')} (Closed Month)`;
-      isMonthClosed = true;
-    } else if (month === 'current') {
-      startDate = moment().startOf('month').toDate();
-      endDate = moment().endOf('month').toDate();
-      periodLabel = `${moment().format('MMMM YYYY')} (Current Month)`;
-      isMonthClosed = false;
-    } else if (month && /^\d{4}-\d{2}$/.test(month)) {
+    if (month && /^\d{4}-\d{2}$/.test(month)) {
       const parsedMonth = moment(month, 'YYYY-MM');
       startDate = parsedMonth.clone().startOf('month').toDate();
       endDate = parsedMonth.clone().endOf('month').toDate();
-      periodLabel = parsedMonth.format('MMMM YYYY');
-      isMonthClosed = parsedMonth.isBefore(moment().startOf('month'));
-    } else if (from || to) {
-      if (from) startDate = moment(from).startOf('day').toDate();
-      if (to) endDate = moment(to).endOf('day').toDate();
-      periodLabel = `${from || 'Start'} to ${to || 'Now'}`;
+      periodLabel = `${parsedMonth.format('MMMM YYYY')} (Closed Month)`;
     } else {
-      // Default to current month (1st to 30/31)
-      startDate = moment().startOf('month').toDate();
-      endDate = moment().endOf('month').toDate();
-      periodLabel = `${moment().format('MMMM YYYY')} (Current Month)`;
-      isMonthClosed = false;
+      // Strictly previous closed month (e.g. August when in September, September when in October, etc.)
+      const lastMonthDate = moment().subtract(1, 'month');
+      startDate = lastMonthDate.clone().startOf('month').toDate();
+      endDate = lastMonthDate.clone().endOf('month').toDate();
+      periodLabel = `${lastMonthDate.format('MMMM YYYY')} (Previous Closed Month)`;
     }
 
     const match = {

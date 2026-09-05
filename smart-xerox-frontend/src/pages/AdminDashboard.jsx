@@ -86,9 +86,6 @@ const AdminDashboard = () => {
   const [settlementData, setSettlementData] = useState(null);
   const [settlementLoading, setSettlementLoading] = useState(false);
   const [selectedShopFilter, setSelectedShopFilter] = useState('all');
-  const [settlementMonth, setSettlementMonth] = useState('current');
-  const [settlementFrom, setSettlementFrom] = useState('');
-  const [settlementTo, setSettlementTo] = useState('');
   const [drilldownShop, setDrilldownShop] = useState(null);
 
   const fetchSettlementReport = useCallback(async () => {
@@ -96,12 +93,7 @@ const AdminDashboard = () => {
     try {
       const params = new URLSearchParams();
       if (selectedShopFilter && selectedShopFilter !== 'all') params.append('shopId', selectedShopFilter);
-      if (settlementMonth && settlementMonth !== 'custom') {
-        params.append('month', settlementMonth);
-      } else {
-        if (settlementFrom) params.append('from', settlementFrom);
-        if (settlementTo) params.append('to', settlementTo);
-      }
+      params.append('month', 'last_month');
 
       const res = await adminAPI.getSettlementReport(params.toString());
       setSettlementData(res.data.data);
@@ -110,7 +102,7 @@ const AdminDashboard = () => {
     } finally {
       setSettlementLoading(false);
     }
-  }, [selectedShopFilter, settlementMonth, settlementFrom, settlementTo]);
+  }, [selectedShopFilter]);
 
   useEffect(() => {
     if (activeTab === 'settlement') {
@@ -561,49 +553,29 @@ const AdminDashboard = () => {
                   </div>
                 </div>
                 <Button 
-                  onClick={() => { setSettlementMonth('last_month'); }}
+                  onClick={fetchSettlementReport}
                   variant="outline"
                   className="border-emerald-600 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-400 dark:text-emerald-300 font-semibold text-xs shrink-0"
                 >
-                  📦 View Closed Month Report
+                  🔄 Refresh Settlement Report
                 </Button>
               </div>
             )}
 
-            {/* Filter & Period Selector Bar */}
+            {/* Filter & Settlement Period Bar */}
             <div className="glass-card p-4 sm:p-5 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
               <div className="flex flex-wrap items-center gap-2">
-                <span className="text-xs font-semibold text-muted-foreground mr-1">Period:</span>
-                <button
-                  type="button"
-                  onClick={() => { setSettlementMonth('current'); }}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${settlementMonth === 'current' ? 'sunrise-gradient text-white shadow-sm' : 'bg-secondary text-secondary-foreground hover:bg-secondary/80'}`}
-                >
-                  📅 Current Month
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { setSettlementMonth('last_month'); }}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${settlementMonth === 'last_month' ? 'sunrise-gradient text-white shadow-sm' : 'bg-secondary text-secondary-foreground hover:bg-secondary/80'}`}
-                >
-                  📦 Last Month (Closed)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { setSettlementMonth('custom'); }}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${settlementMonth === 'custom' ? 'sunrise-gradient text-white shadow-sm' : 'bg-secondary text-secondary-foreground hover:bg-secondary/80'}`}
-                >
-                  🗓️ Custom Range
-                </button>
+                <span className="text-xs font-semibold text-muted-foreground mr-1">Settlement Period:</span>
+                <span className="px-3.5 py-1.5 rounded-lg text-xs font-bold sunrise-gradient text-white shadow-sm flex items-center gap-1.5">
+                  <Calendar className="h-3.5 w-3.5" />
+                  {settlementData?.period?.label || 'Previous Closed Month'}
+                </span>
+                {settlementData?.period?.startDate && settlementData?.period?.endDate && (
+                  <span className="text-xs text-muted-foreground hidden sm:inline ml-1 font-mono">
+                    ({new Date(settlementData.period.startDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })} – {new Date(settlementData.period.endDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })})
+                  </span>
+                )}
               </div>
-
-              {settlementMonth === 'custom' && (
-                <div className="flex flex-wrap items-center gap-2">
-                  <Input type="date" value={settlementFrom} onChange={e => setSettlementFrom(e.target.value)} className="h-8 text-xs w-36" />
-                  <span className="text-xs text-muted-foreground">to</span>
-                  <Input type="date" value={settlementTo} onChange={e => setSettlementTo(e.target.value)} className="h-8 text-xs w-36" />
-                </div>
-              )}
 
               <div className="flex items-center gap-2 shrink-0">
                 <select 
@@ -623,6 +595,7 @@ const AdminDashboard = () => {
                   variant="outline" 
                   disabled={settlementLoading}
                   className="h-9 px-3"
+                  title="Refresh Settlement Report"
                 >
                   <RefreshCw className={`h-3.5 w-3.5 ${settlementLoading ? 'animate-spin' : ''}`} />
                 </Button>
