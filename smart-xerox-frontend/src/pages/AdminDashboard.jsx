@@ -106,7 +106,7 @@ const AdminDashboard = () => {
       const res = await adminAPI.getSettlementReport(params.toString());
       setSettlementData(res.data.data);
     } catch (err) {
-      toast.error('Failed to load settlement report');
+      toast.error(err.response?.data?.message || 'Failed to load settlement report');
     } finally {
       setSettlementLoading(false);
     }

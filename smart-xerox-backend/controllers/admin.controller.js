@@ -668,102 +668,81 @@ exports.createShopWithCredentials = asyncHandler(async (req, res) => {
 
 // ─── Shop Settlement & Admin Margin Report ───────────────────────────────────
 exports.getShopSettlementReport = asyncHandler(async (req, res) => {
-  const { shopId, from, to, month } = req.query;
-  const mongoose = require('mongoose');
+  try {
+    const { shopId, from, to, month } = req.query;
+    const mongoose = require('mongoose');
 
-  const now = new Date();
-  const currentDay = now.getDate();
-  const isSettlementWindowActive = currentDay <= 7; // Available for 7 days after 30th/31st (1st to 7th)
+    const now = new Date();
+    const currentDay = now.getDate();
+    const isSettlementWindowActive = currentDay <= 7; // Available for 7 days after 30th/31st (1st to 7th)
 
-  let startDate = null;
-  let endDate = null;
-  let periodLabel = 'Custom Period';
-  let isMonthClosed = false;
+    let startDate = null;
+    let endDate = null;
+    let periodLabel = 'Custom Period';
+    let isMonthClosed = false;
 
-  if (month === 'last_month') {
-    const lastMonthDate = moment().subtract(1, 'month');
-    startDate = lastMonthDate.clone().startOf('month').toDate();
-    endDate = lastMonthDate.clone().endOf('month').toDate();
-    periodLabel = `${lastMonthDate.format('MMMM YYYY')} (Closed Month)`;
-    isMonthClosed = true;
-  } else if (month === 'current') {
-    startDate = moment().startOf('month').toDate();
-    endDate = moment().endOf('month').toDate();
-    periodLabel = `${moment().format('MMMM YYYY')} (Current Month)`;
-    isMonthClosed = false;
-  } else if (month && /^\d{4}-\d{2}$/.test(month)) {
-    const parsedMonth = moment(month, 'YYYY-MM');
-    startDate = parsedMonth.clone().startOf('month').toDate();
-    endDate = parsedMonth.clone().endOf('month').toDate();
-    periodLabel = parsedMonth.format('MMMM YYYY');
-    isMonthClosed = parsedMonth.isBefore(moment().startOf('month'));
-  } else if (from || to) {
-    if (from) startDate = moment(from).startOf('day').toDate();
-    if (to) endDate = moment(to).endOf('day').toDate();
-    periodLabel = `${from || 'Start'} to ${to || 'Now'}`;
-  } else {
-    // Default to current month (1st to 30/31)
-    startDate = moment().startOf('month').toDate();
-    endDate = moment().endOf('month').toDate();
-    periodLabel = `${moment().format('MMMM YYYY')} (Current Month)`;
-    isMonthClosed = false;
-  }
+    if (month === 'last_month') {
+      const lastMonthDate = moment().subtract(1, 'month');
+      startDate = lastMonthDate.clone().startOf('month').toDate();
+      endDate = lastMonthDate.clone().endOf('month').toDate();
+      periodLabel = `${lastMonthDate.format('MMMM YYYY')} (Closed Month)`;
+      isMonthClosed = true;
+    } else if (month === 'current') {
+      startDate = moment().startOf('month').toDate();
+      endDate = moment().endOf('month').toDate();
+      periodLabel = `${moment().format('MMMM YYYY')} (Current Month)`;
+      isMonthClosed = false;
+    } else if (month && /^\d{4}-\d{2}$/.test(month)) {
+      const parsedMonth = moment(month, 'YYYY-MM');
+      startDate = parsedMonth.clone().startOf('month').toDate();
+      endDate = parsedMonth.clone().endOf('month').toDate();
+      periodLabel = parsedMonth.format('MMMM YYYY');
+      isMonthClosed = parsedMonth.isBefore(moment().startOf('month'));
+    } else if (from || to) {
+      if (from) startDate = moment(from).startOf('day').toDate();
+      if (to) endDate = moment(to).endOf('day').toDate();
+      periodLabel = `${from || 'Start'} to ${to || 'Now'}`;
+    } else {
+      // Default to current month (1st to 30/31)
+      startDate = moment().startOf('month').toDate();
+      endDate = moment().endOf('month').toDate();
+      periodLabel = `${moment().format('MMMM YYYY')} (Current Month)`;
+      isMonthClosed = false;
+    }
 
-  const match = {
-    status: { $in: ['paid', 'accepted', 'printing', 'ready', 'picked_up'] }
-  };
-
-  if (shopId && shopId !== 'all' && mongoose.Types.ObjectId.isValid(shopId)) {
-    match.shop = new mongoose.Types.ObjectId(shopId);
-  }
-
-  if (startDate || endDate) {
-    match.createdAt = {};
-    if (startDate) match.createdAt.$gte = startDate;
-    if (endDate) match.createdAt.$lte = endDate;
-  }
-
-  const [orders, allShops] = await Promise.all([
-    Order.find(match)
-      .populate('shop', 'name owner address phone')
-      .populate('user', 'name phone email')
-      .sort({ createdAt: -1 })
-      .lean(),
-    Shop.find({}).populate('owner', 'name email phone').lean()
-  ]);
-
-  const shopMap = {};
-  (allShops || []).forEach(s => {
-    if (!s?._id) return;
-    const idStr = s._id.toString();
-    shopMap[idStr] = {
-      shopId: idStr,
-      shopName: s.name || 'Unnamed Shop',
-      ownerName: s.owner?.name || 'Shopkeeper',
-      ownerPhone: s.owner?.phone || s.phone || '',
-      ownerEmail: s.owner?.email || '',
-      totalOrders: 0,
-      totalRevenue: 0,
-      totalDocs: 0,
-      totalOrderPages: 0,
-      docsOver5Pages: 0,
-      adminMarginReceivable: 0,
-      shopNetRevenue: 0,
-      orders: []
+    const match = {
+      status: { $in: ['paid', 'accepted', 'printing', 'ready', 'picked_up'] }
     };
-  });
 
-  (orders || []).forEach(order => {
-    if (!order) return;
-    const sId = order.shop?._id ? order.shop._id.toString() : (order.shop ? order.shop.toString() : 'unknown');
-    
-    if (!shopMap[sId]) {
-      shopMap[sId] = {
-        shopId: sId,
-        shopName: order.shop?.name || (sId === 'unknown' ? 'Unassigned / Direct Orders' : 'Shop'),
-        ownerName: order.shop?.owner?.name || 'Shopkeeper',
-        ownerPhone: order.shop?.phone || '',
-        ownerEmail: '',
+    if (shopId && shopId !== 'all' && mongoose.Types.ObjectId.isValid(shopId)) {
+      match.shop = new mongoose.Types.ObjectId(shopId);
+    }
+
+    if (startDate || endDate) {
+      match.createdAt = {};
+      if (startDate) match.createdAt.$gte = startDate;
+      if (endDate) match.createdAt.$lte = endDate;
+    }
+
+    const [orders, allShops] = await Promise.all([
+      Order.find(match)
+        .populate('shop', 'name owner address phone')
+        .populate('user', 'name phone email')
+        .sort({ createdAt: -1 })
+        .lean(),
+      Shop.find({}).populate('owner', 'name email phone').lean()
+    ]);
+
+    const shopMap = {};
+    (allShops || []).forEach(s => {
+      if (!s?._id) return;
+      const idStr = s._id.toString();
+      shopMap[idStr] = {
+        shopId: idStr,
+        shopName: s.name || 'Unnamed Shop',
+        ownerName: s.owner?.name || 'Shopkeeper',
+        ownerPhone: s.owner?.phone || s.phone || '',
+        ownerEmail: s.owner?.email || '',
         totalOrders: 0,
         totalRevenue: 0,
         totalDocs: 0,
@@ -773,87 +752,133 @@ exports.getShopSettlementReport = asyncHandler(async (req, res) => {
         shopNetRevenue: 0,
         orders: []
       };
-    }
-
-    let orderTotalPages = 0;
-    const docs = Array.isArray(order.documents) ? order.documents : [];
-    const orderTotalDocs = docs.length || 1;
-    
-    docs.forEach(doc => {
-      if (!doc) return;
-      const ranges = Array.isArray(doc.printingRanges) ? doc.printingRanges : [];
-      const docPages = ranges.reduce((sum, r) => sum + (((r.rangeEnd || 1) - (r.rangeStart || 1) + 1) * (r.copies || 1)), 0) || (doc.pageCount || doc.detectedPages || 1);
-      orderTotalPages += docPages;
     });
 
-    if (orderTotalPages === 0) {
-      orderTotalPages = order.totalPages || 1;
-    }
+    (orders || []).forEach(order => {
+      if (!order) return;
+      const sId = order.shop?._id ? order.shop._id.toString() : (order.shop ? order.shop.toString() : 'unknown');
+      
+      if (!shopMap[sId]) {
+        shopMap[sId] = {
+          shopId: sId,
+          shopName: order.shop?.name || (sId === 'unknown' ? 'Unassigned / Direct Orders' : 'Shop'),
+          ownerName: order.shop?.owner?.name || 'Shopkeeper',
+          ownerPhone: order.shop?.phone || '',
+          ownerEmail: '',
+          totalOrders: 0,
+          totalRevenue: 0,
+          totalDocs: 0,
+          totalOrderPages: 0,
+          docsOver5Pages: 0,
+          adminMarginReceivable: 0,
+          shopNetRevenue: 0,
+          orders: []
+        };
+      }
 
-    const isOver5Pages = orderTotalPages > 5;
-    const totalAmount = Number(order.pricing?.total || order.totalAmount || 0);
-    const adminMargin = order.pricing?.platformMargin !== undefined 
-      ? Number(order.pricing.platformMargin) 
-      : (isOver5Pages ? 1 : 0);
-    const shopReceivable = order.pricing?.shopReceivable !== undefined 
-      ? Number(order.pricing.shopReceivable) 
-      : Math.max(0, totalAmount - adminMargin);
+      let orderTotalPages = 0;
+      const docs = Array.isArray(order.documents) ? order.documents : [];
+      const orderTotalDocs = docs.length || 1;
+      
+      docs.forEach(doc => {
+        if (!doc) return;
+        const ranges = Array.isArray(doc.printingRanges) ? doc.printingRanges : [];
+        const docPages = ranges.reduce((sum, r) => sum + (((r.rangeEnd || 1) - (r.rangeStart || 1) + 1) * (r.copies || 1)), 0) || (doc.pageCount || doc.detectedPages || 1);
+        orderTotalPages += docPages;
+      });
 
-    const targetShop = shopMap[sId];
-    targetShop.totalOrders += 1;
-    targetShop.totalRevenue += totalAmount;
-    targetShop.totalDocs += orderTotalDocs;
-    targetShop.totalOrderPages += orderTotalPages;
-    if (isOver5Pages) targetShop.docsOver5Pages += 1;
-    targetShop.adminMarginReceivable += adminMargin;
-    targetShop.shopNetRevenue += shopReceivable;
+      if (orderTotalPages === 0) {
+        orderTotalPages = order.totalPages || 1;
+      }
 
-    targetShop.orders.push({
-      orderId: order._id,
-      orderNumber: order.orderNumber || order._id?.toString()?.slice(-6)?.toUpperCase(),
-      createdAt: order.createdAt,
-      customerName: order.user?.name || 'Customer',
-      customerPhone: order.user?.phone || '',
-      totalDocs: orderTotalDocs,
-      totalOrderPages,
-      docsOver5Pages: isOver5Pages ? 1 : 0,
-      totalAmount,
-      adminMargin,
-      shopReceivable,
-      status: order.status
+      const isOver5Pages = orderTotalPages > 5;
+      const totalAmount = Number(order.pricing?.total || order.totalAmount || 0);
+      const adminMargin = order.pricing?.platformMargin !== undefined 
+        ? Number(order.pricing.platformMargin) 
+        : (isOver5Pages ? 1 : 0);
+      const shopReceivable = order.pricing?.shopReceivable !== undefined 
+        ? Number(order.pricing.shopReceivable) 
+        : Math.max(0, totalAmount - adminMargin);
+
+      const targetShop = shopMap[sId];
+      targetShop.totalOrders += 1;
+      targetShop.totalRevenue += totalAmount;
+      targetShop.totalDocs += orderTotalDocs;
+      targetShop.totalOrderPages += orderTotalPages;
+      if (isOver5Pages) targetShop.docsOver5Pages += 1;
+      targetShop.adminMarginReceivable += adminMargin;
+      targetShop.shopNetRevenue += shopReceivable;
+
+      targetShop.orders.push({
+        orderId: order._id,
+        orderNumber: order.orderNumber || order._id?.toString()?.slice(-6)?.toUpperCase(),
+        createdAt: order.createdAt,
+        customerName: order.user?.name || 'Customer',
+        customerPhone: order.user?.phone || '',
+        totalDocs: orderTotalDocs,
+        totalOrderPages,
+        docsOver5Pages: isOver5Pages ? 1 : 0,
+        totalAmount,
+        adminMargin,
+        shopReceivable,
+        status: order.status
+      });
     });
-  });
 
-  const shopSummaries = Object.values(shopMap).filter(s => {
-    if (!shopId || shopId === 'all') return true;
-    return s.shopId?.toString() === shopId.toString();
-  });
+    const shopSummaries = Object.values(shopMap).filter(s => {
+      if (!shopId || shopId === 'all') return true;
+      return s.shopId?.toString() === shopId.toString();
+    });
 
-  const overallTotals = shopSummaries.reduce((acc, s) => {
-    acc.totalOrders += s.totalOrders || 0;
-    acc.totalRevenue += s.totalRevenue || 0;
-    acc.totalDocs += s.totalDocs || 0;
-    acc.totalOrderPages += s.totalOrderPages || 0;
-    acc.docsOver5Pages += s.docsOver5Pages || 0;
-    acc.adminMarginReceivable += s.adminMarginReceivable || 0;
-    acc.shopNetRevenue += s.shopNetRevenue || 0;
-    return acc;
-  }, { totalOrders: 0, totalRevenue: 0, totalDocs: 0, totalOrderPages: 0, docsOver5Pages: 0, adminMarginReceivable: 0, shopNetRevenue: 0 });
+    const overallTotals = shopSummaries.reduce((acc, s) => {
+      acc.totalOrders += s.totalOrders || 0;
+      acc.totalRevenue += s.totalRevenue || 0;
+      acc.totalDocs += s.totalDocs || 0;
+      acc.totalOrderPages += s.totalOrderPages || 0;
+      acc.docsOver5Pages += s.docsOver5Pages || 0;
+      acc.adminMarginReceivable += s.adminMarginReceivable || 0;
+      acc.shopNetRevenue += s.shopNetRevenue || 0;
+      return acc;
+    }, { totalOrders: 0, totalRevenue: 0, totalDocs: 0, totalOrderPages: 0, docsOver5Pages: 0, adminMarginReceivable: 0, shopNetRevenue: 0 });
 
-  res.status(200).json({
-    success: true,
-    data: {
-      period: {
-        label: periodLabel,
-        startDate,
-        endDate,
-        isClosed: isMonthClosed,
-        isSettlementWindowActive,
-        daysRemainingInWindow: Math.max(0, 7 - currentDay + 1)
-      },
-      overallTotals,
-      shops: shopSummaries
-    }
-  });
+    res.status(200).json({
+      success: true,
+      data: {
+        period: {
+          label: periodLabel,
+          startDate,
+          endDate,
+          isClosed: isMonthClosed,
+          isSettlementWindowActive,
+          daysRemainingInWindow: Math.max(0, 7 - currentDay + 1)
+        },
+        overallTotals,
+        shops: shopSummaries
+      }
+    });
+  } catch (error) {
+    logger.error('CRITICAL: getShopSettlementReport failure:', {
+      error: error.message,
+      stack: error.stack,
+      query: req.query
+    });
+    res.status(500).json({
+      success: false,
+      message: `Settlement report error: ${error.message}`,
+      data: {
+        period: {
+          label: 'Error Period',
+          startDate: null,
+          endDate: null,
+          isClosed: false,
+          isSettlementWindowActive: false,
+          daysRemainingInWindow: 0
+        },
+        overallTotals: { totalOrders: 0, totalRevenue: 0, totalDocs: 0, totalOrderPages: 0, docsOver5Pages: 0, adminMarginReceivable: 0, shopNetRevenue: 0 },
+        shops: []
+      }
+    });
+  }
 });
+
 
