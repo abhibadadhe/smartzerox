@@ -55,15 +55,15 @@ const calculateOrderPrice = (documents, shop, additionalServices = {}, globalCom
     ? Number(shop.platformMargin)
     : Number(globalCommissionRate || 0);
 
-  // 2. Percentage commission amount
+  // 2. Percentage commission amount (DEDUCTED FROM SHOPKEEPER)
   const percentCommission = commissionPercent > 0 
     ? Math.round((subtotal * commissionPercent) / 100 * 100) / 100 
     : 0;
 
-  // 3. Flat page fee: ₹1 extra for admin if order > 5 pages
+  // 3. Flat page fee: ₹1 extra for admin if order > 5 pages (PAID BY CUSTOMER)
   const pageFee = totalOrderPages > 5 ? 1 : 0;
 
-  // Total Platform Fee (Admin Margin) = Percentage Commission + Page Fee
+  // Total Platform Margin / Admin Revenue = Percent Commission (from shop) + Page Fee (from customer)
   const totalAdminFee = Math.round((percentCommission + pageFee) * 100) / 100;
 
   // Additional services (spiral, lamination, etc.)
@@ -80,11 +80,14 @@ const calculateOrderPrice = (documents, shop, additionalServices = {}, globalCom
     additionalCharge += Math.ceil(subtotal * 0.2);
   }
 
-  // Shop receives 100% of printing and binding charges
-  const shopReceivable = subtotal + additionalCharge;
+  // Shop Gross amount
+  const shopGross = subtotal + additionalCharge;
 
-  // Total student payment = Shop Receivable + Platform Fee
-  const total = shopReceivable + totalAdminFee;
+  // Shopkeeper receives: Shop Gross - Platform Commission (deducted from shopkeeper)
+  const shopReceivable = Math.max(0, Math.round((shopGross - percentCommission) * 100) / 100);
+
+  // Customer pays: Shop Gross + Flat Page Fee (only ₹1 if >5 pages; customer does NOT pay commission)
+  const total = Math.round((shopGross + pageFee) * 100) / 100;
 
   return {
     subtotal,

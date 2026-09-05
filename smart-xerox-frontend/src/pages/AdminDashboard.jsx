@@ -1569,25 +1569,29 @@ const AdminDashboard = () => {
                     <span className="flex items-center text-sm text-muted-foreground px-2">%</span>
                   </div>
                   <p className="text-xs text-muted-foreground mt-1">
-                    Example: If shop charges ₹10/page and commission is 10%, customer pays ₹11. Shop gets ₹10, platform gets ₹1.
+                    Example: For a ₹100 order at {commissionRate || 10}% commission, the customer pays ₹100 (+₹1 if &gt;5 pages). The platform commission of ₹{(100 * Number(commissionRate || 10) / 100).toFixed(0)} is deducted from the shopkeeper, who receives ₹{(100 - 100 * Number(commissionRate || 10) / 100).toFixed(0)}.
                   </p>
                 </div>
 
                 {/* Split preview */}
                 {commissionRate && Number(commissionRate) > 0 && (
                   <div className="rounded-xl bg-orange-50 border border-orange-100 p-4 text-xs space-y-1">
-                    <p className="font-semibold text-orange-800 mb-2">💡 Split Preview (for ₹100 order)</p>
+                    <p className="font-semibold text-orange-800 mb-2">💡 Split Preview (for ₹100 order, &gt;5 pages)</p>
                     <div className="flex justify-between text-orange-700">
-                      <span>Shop receives</span>
-                      <span className="font-bold">₹100.00</span>
+                      <span>Customer pays (₹100 printing + ₹1 page fee)</span>
+                      <span className="font-bold">₹101.00</span>
                     </div>
                     <div className="flex justify-between text-orange-700">
-                      <span>Platform commission ({commissionRate}%)</span>
+                      <span>Platform commission ({commissionRate}% from shopkeeper)</span>
                       <span className="font-bold">₹{(100 * Number(commissionRate) / 100).toFixed(2)}</span>
                     </div>
+                    <div className="flex justify-between text-orange-700">
+                      <span>Admin total revenue (Commission + ₹1 page fee)</span>
+                      <span className="font-bold">₹{(100 * Number(commissionRate) / 100 + 1).toFixed(2)}</span>
+                    </div>
                     <div className="flex justify-between text-orange-900 border-t border-orange-200 pt-1 mt-1">
-                      <span>Customer pays</span>
-                      <span className="font-bold">₹{(100 + 100 * Number(commissionRate) / 100).toFixed(2)}</span>
+                      <span>Shop receives (₹100 - {commissionRate}% commission)</span>
+                      <span className="font-bold">₹{(100 - 100 * Number(commissionRate) / 100).toFixed(2)}</span>
                     </div>
                   </div>
                 )}
