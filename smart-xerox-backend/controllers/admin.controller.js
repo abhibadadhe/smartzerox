@@ -745,6 +745,8 @@ exports.getShopSettlementReport = asyncHandler(async (req, res) => {
         totalDocs: 0,
         totalOrderPages: 0,
         docsOver5Pages: 0,
+        adminDirectFees: 0,
+        adminCommissionDue: 0,
         adminMarginReceivable: 0,
         shopNetRevenue: 0,
         orders: []
@@ -769,6 +771,8 @@ exports.getShopSettlementReport = asyncHandler(async (req, res) => {
           totalDocs: 0,
           totalOrderPages: 0,
           docsOver5Pages: 0,
+          adminDirectFees: 0,
+          adminCommissionDue: 0,
           adminMarginReceivable: 0,
           shopNetRevenue: 0,
           orders: []
@@ -792,12 +796,21 @@ exports.getShopSettlementReport = asyncHandler(async (req, res) => {
 
       const isOver5Pages = orderTotalPages > 5;
       const totalAmount = Number(order.pricing?.total || order.totalAmount || 0);
-      const adminMargin = order.pricing?.platformMargin !== undefined 
-        ? Number(order.pricing.platformMargin) 
+      const pageFee = order.pricing?.pageFee !== undefined 
+        ? Number(order.pricing.pageFee) 
         : (isOver5Pages ? 1 : 0);
+      
+      const percentCommission = order.pricing?.percentCommission !== undefined
+        ? Number(order.pricing.percentCommission)
+        : (order.pricing?.commissionPercent ? Math.round((Number(order.pricing.subtotal || 0) * Number(order.pricing.commissionPercent)) / 100 * 100) / 100 : 0);
+
+      const adminDirectFee = pageFee; // ₹1 paid by student, already in Admin's account directly via online payment
+      const adminCommissionDue = percentCommission; // % commission owed manually by shopkeeper to Admin at month-end
+      const adminMargin = adminDirectFee + adminCommissionDue;
+
       const shopReceivable = order.pricing?.shopReceivable !== undefined 
         ? Number(order.pricing.shopReceivable) 
-        : Math.max(0, totalAmount - adminMargin);
+        : Math.max(0, totalAmount - adminDirectFee);
 
       const targetShop = shopMap[sId];
       targetShop.totalOrders += 1;
@@ -805,6 +818,8 @@ exports.getShopSettlementReport = asyncHandler(async (req, res) => {
       targetShop.totalDocs += orderTotalDocs;
       targetShop.totalOrderPages += orderTotalPages;
       if (isOver5Pages) targetShop.docsOver5Pages += 1;
+      targetShop.adminDirectFees += adminDirectFee;
+      targetShop.adminCommissionDue += adminCommissionDue;
       targetShop.adminMarginReceivable += adminMargin;
       targetShop.shopNetRevenue += shopReceivable;
 
@@ -818,6 +833,8 @@ exports.getShopSettlementReport = asyncHandler(async (req, res) => {
         totalOrderPages: orderTotalPages,
         docsOver5Pages: isOver5Pages ? 1 : 0,
         totalAmount,
+        pageFee: adminDirectFee,
+        percentCommission: adminCommissionDue,
         adminMargin,
         shopReceivable,
         status: order.status
@@ -835,10 +852,22 @@ exports.getShopSettlementReport = asyncHandler(async (req, res) => {
       acc.totalDocs += s.totalDocs || 0;
       acc.totalOrderPages += s.totalOrderPages || 0;
       acc.docsOver5Pages += s.docsOver5Pages || 0;
+      acc.adminDirectFees += s.adminDirectFees || 0;
+      acc.adminCommissionDue += s.adminCommissionDue || 0;
       acc.adminMarginReceivable += s.adminMarginReceivable || 0;
       acc.shopNetRevenue += s.shopNetRevenue || 0;
       return acc;
-    }, { totalOrders: 0, totalRevenue: 0, totalDocs: 0, totalOrderPages: 0, docsOver5Pages: 0, adminMarginReceivable: 0, shopNetRevenue: 0 });
+    }, { 
+      totalOrders: 0, 
+      totalRevenue: 0, 
+      totalDocs: 0, 
+      totalOrderPages: 0, 
+      docsOver5Pages: 0, 
+      adminDirectFees: 0, 
+      adminCommissionDue: 0, 
+      adminMarginReceivable: 0, 
+      shopNetRevenue: 0 
+    });
 
     res.status(200).json({
       success: true,
@@ -868,7 +897,17 @@ exports.getShopSettlementReport = asyncHandler(async (req, res) => {
           isSettlementWindowActive: false,
           daysRemainingInWindow: 0
         },
-        overallTotals: { totalOrders: 0, totalRevenue: 0, totalDocs: 0, totalOrderPages: 0, docsOver5Pages: 0, adminMarginReceivable: 0, shopNetRevenue: 0 },
+        overallTotals: { 
+          totalOrders: 0, 
+          totalRevenue: 0, 
+          totalDocs: 0, 
+          totalOrderPages: 0, 
+          docsOver5Pages: 0, 
+          adminDirectFees: 0, 
+          adminCommissionDue: 0, 
+          adminMarginReceivable: 0, 
+          shopNetRevenue: 0 
+        },
         shops: []
       }
     });

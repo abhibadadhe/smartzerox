@@ -49,7 +49,16 @@ const ShopSettlements = ({ orders = [], shopData }) => {
   // Compute real data from orders
   const pickedUpOrders = orders.filter(o => o.status === 'picked_up').sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
   const totalEarnings = shopData?.totalRevenue || 0;
-  const totalPlatformFees = orders.reduce((sum, o) => sum + (Number(o.pricing?.platformMargin) || 0), 0);
+  
+  // Percentage commission due to admin (shopkeeper pays manually to admin at month-end)
+  const totalCommissionDue = orders.reduce((sum, o) => {
+    if (o.pricing?.percentCommission !== undefined) {
+      return sum + Number(o.pricing.percentCommission);
+    }
+    const subtotal = Number(o.pricing?.subtotal || 0);
+    const rate = Number(o.pricing?.commissionPercent || shopData?.platformMargin || 0);
+    return sum + (rate > 0 ? Math.round((subtotal * rate) / 100 * 100) / 100 : 0);
+  }, 0);
   
   // Real available balance from backend
   const availableBalance = shopData?.availableBalance || 0;
@@ -92,7 +101,7 @@ const ShopSettlements = ({ orders = [], shopData }) => {
             <ArrowDownRight size={20} className="text-orange-500" />
             <span className="font-medium">Commission Due to Admin</span>
           </div>
-          <h3 className="text-3xl font-bold text-gray-800">₹{totalPlatformFees.toFixed(2)}</h3>
+          <h3 className="text-3xl font-bold text-gray-800">₹{totalCommissionDue.toFixed(2)}</h3>
           <p className="text-xs text-muted-foreground mt-2">
             To be paid manually to Admin at month-end ({shopData?.platformMargin > 0 ? `${shopData.platformMargin}% rate` : 'Standard rate'})
           </p>

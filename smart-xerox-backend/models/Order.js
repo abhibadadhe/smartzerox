@@ -112,11 +112,13 @@ const orderSchema = new mongoose.Schema(
     specialInstructions: { type: String, maxlength: 500 },
     pricing: {
       subtotal: { type: Number, required: true },
+      pageFee: { type: Number, default: 0 },
+      percentCommission: { type: Number, default: 0 },
       platformMargin: { type: Number, default: 0 },
       commissionPercent: { type: Number, default: 0 }, // commission % applied at order time
       additionalServicesCharge: { type: Number, default: 0 },
       total: { type: Number, required: true },
-      shopReceivable: { type: Number, required: true }, // total - commission
+      shopReceivable: { type: Number, required: true }, // 100% of printing and additional services
     },
     status: {
       type: String,

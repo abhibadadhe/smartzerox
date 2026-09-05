@@ -117,7 +117,7 @@ const AdminDashboard = () => {
     }
 
     const rows = [
-      ['Shop Name', 'Owner Name', 'Owner Phone', 'Total Orders', 'Total Gross Revenue (INR)', 'Total Docs', 'Docs > 5 Pages', 'Admin Margin Due (INR)', 'Shop Net Revenue (INR)']
+      ['Shop Name', 'Owner Name', 'Owner Phone', 'Total Orders', 'Total Gross Revenue (INR)', 'Total Docs/Pages', 'Orders > 5 Pages', 'Direct Admin Fee (INR - Online ₹1)', 'Commission Due from Shop (INR)', 'Total Admin Revenue (INR)', 'Shop Earnings (INR - 100%)']
     ];
 
     settlementData.shops.forEach(s => {
@@ -127,9 +127,11 @@ const AdminDashboard = () => {
         `"${s.ownerPhone}"`,
         s.totalOrders,
         s.totalRevenue,
-        s.totalDocs,
+        s.totalOrderPages || s.totalDocs,
         s.docsOver5Pages,
-        s.adminMarginReceivable,
+        s.adminDirectFees || 0,
+        s.adminCommissionDue || 0,
+        s.adminMarginReceivable || 0,
         s.shopNetRevenue
       ]);
     });
@@ -616,7 +618,7 @@ const AdminDashboard = () => {
                 <div className="glass-card p-4 text-center">
                   <p className="text-xs text-muted-foreground font-medium mb-1">Total Gross Revenue</p>
                   <p className="font-heading text-xl sm:text-2xl font-bold text-slate-900 dark:text-slate-100">
-                    ₹{settlementData.overallTotals.totalRevenue.toLocaleString('en-IN')}
+                    ₹{(settlementData.overallTotals.totalRevenue || 0).toLocaleString('en-IN')}
                   </p>
                   <span className="text-[10px] text-muted-foreground mt-0.5 block">{settlementData.period?.label}</span>
                 </div>
@@ -624,31 +626,31 @@ const AdminDashboard = () => {
                 <div className="glass-card p-4 text-center">
                   <p className="text-xs text-muted-foreground font-medium mb-1">Total Orders</p>
                   <p className="font-heading text-xl sm:text-2xl font-bold text-blue-600 dark:text-blue-400">
-                    {settlementData.overallTotals.totalOrders.toLocaleString('en-IN')}
+                    {(settlementData.overallTotals.totalOrders || 0).toLocaleString('en-IN')}
                   </p>
                   <span className="text-[10px] text-muted-foreground mt-0.5 block">Completed & Paid</span>
-                </div>
-
-                <div className="glass-card p-4 text-center">
-                  <p className="text-xs text-muted-foreground font-medium mb-1">Total Pages / Docs</p>
-                  <p className="font-heading text-xl sm:text-2xl font-bold text-purple-600 dark:text-purple-400">
-                    {settlementData.overallTotals.totalOrderPages || settlementData.overallTotals.totalDocs}
-                  </p>
-                  <span className="text-[10px] text-muted-foreground mt-0.5 block">{settlementData.overallTotals.totalDocs} file(s)</span>
                 </div>
 
                 <div className="glass-card p-4 text-center bg-green-50/50 dark:bg-green-950/20 border-green-200 dark:border-green-800">
                   <p className="text-xs text-green-800 dark:text-green-300 font-medium mb-1">Shop Total Earnings</p>
                   <p className="font-heading text-xl sm:text-2xl font-bold text-green-700 dark:text-green-400">
-                    ₹{settlementData.overallTotals.shopNetRevenue.toLocaleString('en-IN')}
+                    ₹{(settlementData.overallTotals.shopNetRevenue || 0).toLocaleString('en-IN')}
                   </p>
                   <span className="text-[10px] text-green-700/80 mt-0.5 block">100% Printing & Services</span>
                 </div>
 
+                <div className="glass-card p-4 text-center bg-indigo-50/50 dark:bg-indigo-950/20 border-indigo-200 dark:border-indigo-800">
+                  <p className="text-xs text-indigo-800 dark:text-indigo-300 font-medium mb-1">Direct Admin Fee (₹1/order)</p>
+                  <p className="font-heading text-xl sm:text-2xl font-bold text-indigo-700 dark:text-indigo-400">
+                    ₹{(settlementData.overallTotals.adminDirectFees || 0).toLocaleString('en-IN')}
+                  </p>
+                  <span className="text-[10px] text-indigo-700/80 mt-0.5 block">Directly in Admin Acc (&gt;5 pages)</span>
+                </div>
+
                 <div className="glass-card p-4 text-center bg-orange-50/50 dark:bg-orange-950/20 border-orange-200 dark:border-orange-800">
-                  <p className="text-xs text-orange-800 dark:text-orange-300 font-medium mb-1">Commission Due to Admin</p>
+                  <p className="text-xs text-orange-800 dark:text-orange-300 font-medium mb-1">Commission Due from Shops</p>
                   <p className="font-heading text-xl sm:text-2xl font-bold text-orange-600 dark:text-orange-400">
-                    ₹{settlementData.overallTotals.adminMarginReceivable.toLocaleString('en-IN')}
+                    ₹{(settlementData.overallTotals.adminCommissionDue || 0).toLocaleString('en-IN')}
                   </p>
                   <span className="text-[10px] text-orange-700/80 mt-0.5 block">Shopkeeper pays Admin manually</span>
                 </div>
@@ -681,21 +683,22 @@ const AdminDashboard = () => {
                       <th className="px-4 py-3 text-center font-semibold">Printed Pages</th>
                       <th className="px-4 py-3 text-right font-semibold">Customer Total</th>
                       <th className="px-4 py-3 text-right font-semibold text-green-700 dark:text-green-400">Shop Earnings (100%)</th>
-                      <th className="px-4 py-3 text-right font-semibold text-orange-600 dark:text-orange-400">Commission Due to Admin</th>
+                      <th className="px-4 py-3 text-right font-semibold text-indigo-700 dark:text-indigo-400">Direct Fee (₹1 Online)</th>
+                      <th className="px-4 py-3 text-right font-semibold text-orange-600 dark:text-orange-400">Commission Due</th>
                       <th className="px-4 py-3 text-center font-semibold">Audit</th>
                     </tr>
                   </thead>
                   <tbody>
                     {settlementLoading ? (
                       <tr>
-                        <td colSpan={7} className="px-4 py-12 text-center text-muted-foreground">
+                        <td colSpan={8} className="px-4 py-12 text-center text-muted-foreground">
                           <Loader2 className="h-6 w-6 animate-spin mx-auto mb-2 text-orange-500" />
                           Loading settlement reports...
                         </td>
                       </tr>
                     ) : !settlementData?.shops?.length ? (
                       <tr>
-                        <td colSpan={7} className="px-4 py-12 text-center text-muted-foreground">
+                        <td colSpan={8} className="px-4 py-12 text-center text-muted-foreground">
                           No settlement records found for this period.
                         </td>
                       </tr>
@@ -717,8 +720,11 @@ const AdminDashboard = () => {
                         <td className="px-4 py-3.5 text-right font-bold text-green-700 dark:text-green-400">
                           ₹{s.shopNetRevenue.toLocaleString('en-IN')}
                         </td>
+                        <td className="px-4 py-3.5 text-right font-semibold text-indigo-700 dark:text-indigo-400">
+                          ₹{(s.adminDirectFees || 0).toLocaleString('en-IN')}
+                        </td>
                         <td className="px-4 py-3.5 text-right font-semibold text-orange-600 dark:text-orange-400">
-                          ₹{s.adminMarginReceivable.toLocaleString('en-IN')}
+                          ₹{(s.adminCommissionDue || 0).toLocaleString('en-IN')}
                         </td>
                         <td className="px-4 py-3.5 text-center">
                           <Button 
@@ -749,7 +755,7 @@ const AdminDashboard = () => {
                         📑 {drilldownShop.shopName} — Orders Breakdown ({settlementData?.period?.label})
                       </h3>
                       <p className="text-xs text-muted-foreground mt-0.5">
-                        Owner: {drilldownShop.ownerName} · Phone: {drilldownShop.ownerPhone} · Payout Due: <strong className="text-green-600 font-bold">₹{drilldownShop.shopNetRevenue}</strong> (Admin Margin: ₹{drilldownShop.adminMarginReceivable})
+                        Owner: {drilldownShop.ownerName} · Phone: {drilldownShop.ownerPhone} · Shop Earnings: <strong className="text-green-600 font-bold">₹{drilldownShop.shopNetRevenue}</strong> · Direct Admin Fees: <strong className="text-indigo-600 font-bold">₹{drilldownShop.adminDirectFees || 0}</strong> · Commission Due: <strong className="text-orange-600 font-bold">₹{drilldownShop.adminCommissionDue || 0}</strong>
                       </p>
                     </div>
                     <button type="button" onClick={() => setDrilldownShop(null)}><X className="h-5 w-5 text-slate-400" /></button>
@@ -762,9 +768,10 @@ const AdminDashboard = () => {
                           <th className="p-2.5 font-semibold">Order #</th>
                           <th className="p-2.5 font-semibold">Customer</th>
                           <th className="p-2.5 font-semibold text-center">Pages</th>
-                          <th className="p-2.5 font-semibold text-right">Total Amount</th>
-                          <th className="p-2.5 font-semibold text-right">Admin Fee</th>
-                          <th className="p-2.5 font-semibold text-right">Shop Receivable</th>
+                          <th className="p-2.5 font-semibold text-right">Customer Total</th>
+                          <th className="p-2.5 font-semibold text-right text-indigo-700 dark:text-indigo-400">Direct Fee (₹1)</th>
+                          <th className="p-2.5 font-semibold text-right text-orange-600 dark:text-orange-400">Commission Due</th>
+                          <th className="p-2.5 font-semibold text-right text-green-600 dark:text-green-400">Shop Receivable</th>
                           <th className="p-2.5 font-semibold text-center">Status</th>
                           <th className="p-2.5 font-semibold">Date</th>
                         </tr>
@@ -779,7 +786,8 @@ const AdminDashboard = () => {
                             </td>
                             <td className="p-2.5 text-center font-medium">{o.totalOrderPages || o.totalDocs}</td>
                             <td className="p-2.5 text-right font-semibold">₹{o.totalAmount}</td>
-                            <td className="p-2.5 text-right font-medium text-orange-600">₹{o.adminMargin}</td>
+                            <td className="p-2.5 text-right font-medium text-indigo-600 dark:text-indigo-400">₹{o.pageFee || (o.totalOrderPages > 5 ? 1 : 0)}</td>
+                            <td className="p-2.5 text-right font-medium text-orange-600">₹{o.percentCommission || 0}</td>
                             <td className="p-2.5 text-right font-bold text-green-600">₹{o.shopReceivable}</td>
                             <td className="p-2.5 text-center">
                               <span className={`rounded-full px-2 py-0.5 text-[10px] ${statusColors[o.status] || 'bg-muted text-muted-foreground'}`}>
