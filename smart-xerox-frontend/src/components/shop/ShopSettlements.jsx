@@ -49,8 +49,7 @@ const ShopSettlements = ({ orders = [], shopData }) => {
   // Compute real data from orders
   const pickedUpOrders = orders.filter(o => o.status === 'picked_up').sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
   const totalEarnings = shopData?.totalRevenue || 0;
-  const platformMargin = shopData?.platformMargin || 20; // 20% platform fee default
-  const platformFees = (totalEarnings * platformMargin) / 100;
+  const totalPlatformFees = orders.reduce((sum, o) => sum + (Number(o.pricing?.platformMargin) || 0), 0);
   
   // Real available balance from backend
   const availableBalance = shopData?.availableBalance || 0;
@@ -93,8 +92,8 @@ const ShopSettlements = ({ orders = [], shopData }) => {
             <ArrowDownRight size={20} className="text-red-500" />
             <span className="font-medium">Platform Fees</span>
           </div>
-          <h3 className="text-3xl font-bold text-gray-800">₹{platformFees.toFixed(2)}</h3>
-          <p className="text-sm text-gray-500 mt-2">20% standard commission</p>
+          <h3 className="text-3xl font-bold text-gray-800">₹{totalPlatformFees.toFixed(2)}</h3>
+          <p className="text-sm text-gray-500 mt-2">₹1 per order (&gt;5 pages)</p>
         </div>
       </div>
 
