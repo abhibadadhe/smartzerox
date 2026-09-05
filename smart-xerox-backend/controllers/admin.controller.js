@@ -669,8 +669,7 @@ exports.createShopWithCredentials = asyncHandler(async (req, res) => {
 // ─── Shop Settlement & Admin Margin Report ───────────────────────────────────
 exports.getShopSettlementReport = asyncHandler(async (req, res) => {
   const { shopId, from, to, month } = req.query;
-  const Order = require('../models/Order');
-  const Shop = require('../models/Shop');
+  const mongoose = require('mongoose');
 
   const now = new Date();
   const currentDay = now.getDate();
@@ -699,8 +698,8 @@ exports.getShopSettlementReport = asyncHandler(async (req, res) => {
     periodLabel = parsedMonth.format('MMMM YYYY');
     isMonthClosed = parsedMonth.isBefore(moment().startOf('month'));
   } else if (from || to) {
-    if (from) startDate = new Date(from);
-    if (to) endDate = new Date(to);
+    if (from) startDate = moment(from).startOf('day').toDate();
+    if (to) endDate = moment(to).endOf('day').toDate();
     periodLabel = `${from || 'Start'} to ${to || 'Now'}`;
   } else {
     // Default to current month (1st to 30/31)
@@ -714,8 +713,8 @@ exports.getShopSettlementReport = asyncHandler(async (req, res) => {
     status: { $in: ['paid', 'accepted', 'printing', 'ready', 'picked_up'] }
   };
 
-  if (shopId && shopId !== 'all') {
-    match.shop = new (require('mongoose').Types.ObjectId)(shopId);
+  if (shopId && shopId !== 'all' && mongoose.Types.ObjectId.isValid(shopId)) {
+    match.shop = new mongoose.Types.ObjectId(shopId);
   }
 
   if (startDate || endDate) {
@@ -724,18 +723,22 @@ exports.getShopSettlementReport = asyncHandler(async (req, res) => {
     if (endDate) match.createdAt.$lte = endDate;
   }
 
-  const orders = await Order.find(match)
-    .populate('shop', 'name owner address phone')
-    .populate('user', 'name phone email')
-    .sort({ createdAt: -1 })
-    .lean();
+  const [orders, allShops] = await Promise.all([
+    Order.find(match)
+      .populate('shop', 'name owner address phone')
+      .populate('user', 'name phone email')
+      .sort({ createdAt: -1 })
+      .lean(),
+    Shop.find({}).populate('owner', 'name email phone').lean()
+  ]);
 
   const shopMap = {};
-  const allShops = await Shop.find({}).populate('owner', 'name email phone').lean();
-  allShops.forEach(s => {
-    shopMap[s._id.toString()] = {
-      shopId: s._id,
-      shopName: s.name,
+  (allShops || []).forEach(s => {
+    if (!s?._id) return;
+    const idStr = s._id.toString();
+    shopMap[idStr] = {
+      shopId: idStr,
+      shopName: s.name || 'Unnamed Shop',
       ownerName: s.owner?.name || 'Shopkeeper',
       ownerPhone: s.owner?.phone || s.phone || '',
       ownerEmail: s.owner?.email || '',
@@ -750,14 +753,16 @@ exports.getShopSettlementReport = asyncHandler(async (req, res) => {
     };
   });
 
-  orders.forEach(order => {
-    const sId = order.shop?._id?.toString() || order.shop?.toString();
+  (orders || []).forEach(order => {
+    if (!order) return;
+    const sId = order.shop?._id ? order.shop._id.toString() : (order.shop ? order.shop.toString() : 'unknown');
+    
     if (!shopMap[sId]) {
       shopMap[sId] = {
         shopId: sId,
-        shopName: order.shop?.name || 'Shop',
-        ownerName: 'Shopkeeper',
-        ownerPhone: '',
+        shopName: order.shop?.name || (sId === 'unknown' ? 'Unassigned / Direct Orders' : 'Shop'),
+        ownerName: order.shop?.owner?.name || 'Shopkeeper',
+        ownerPhone: order.shop?.phone || '',
         ownerEmail: '',
         totalOrders: 0,
         totalRevenue: 0,
@@ -771,16 +776,28 @@ exports.getShopSettlementReport = asyncHandler(async (req, res) => {
     }
 
     let orderTotalPages = 0;
-    let orderTotalDocs = order.documents?.length || 1;
-    (order.documents || []).forEach(doc => {
-      const docPages = (doc.printingRanges || []).reduce((sum, r) => sum + ((r.rangeEnd - r.rangeStart + 1) * (r.copies || 1)), 0) || (doc.detectedPages || 1);
+    const docs = Array.isArray(order.documents) ? order.documents : [];
+    const orderTotalDocs = docs.length || 1;
+    
+    docs.forEach(doc => {
+      if (!doc) return;
+      const ranges = Array.isArray(doc.printingRanges) ? doc.printingRanges : [];
+      const docPages = ranges.reduce((sum, r) => sum + (((r.rangeEnd || 1) - (r.rangeStart || 1) + 1) * (r.copies || 1)), 0) || (doc.pageCount || doc.detectedPages || 1);
       orderTotalPages += docPages;
     });
 
+    if (orderTotalPages === 0) {
+      orderTotalPages = order.totalPages || 1;
+    }
+
     const isOver5Pages = orderTotalPages > 5;
-    const adminMargin = order.pricing?.platformMargin !== undefined ? order.pricing.platformMargin : (isOver5Pages ? 1 : 0);
-    const totalAmount = order.pricing?.total || 0;
-    const shopReceivable = order.pricing?.shopReceivable !== undefined ? order.pricing.shopReceivable : Math.max(0, totalAmount - adminMargin);
+    const totalAmount = Number(order.pricing?.total || order.totalAmount || 0);
+    const adminMargin = order.pricing?.platformMargin !== undefined 
+      ? Number(order.pricing.platformMargin) 
+      : (isOver5Pages ? 1 : 0);
+    const shopReceivable = order.pricing?.shopReceivable !== undefined 
+      ? Number(order.pricing.shopReceivable) 
+      : Math.max(0, totalAmount - adminMargin);
 
     const targetShop = shopMap[sId];
     targetShop.totalOrders += 1;
@@ -793,7 +810,7 @@ exports.getShopSettlementReport = asyncHandler(async (req, res) => {
 
     targetShop.orders.push({
       orderId: order._id,
-      orderNumber: order.orderNumber,
+      orderNumber: order.orderNumber || order._id?.toString()?.slice(-6)?.toUpperCase(),
       createdAt: order.createdAt,
       customerName: order.user?.name || 'Customer',
       customerPhone: order.user?.phone || '',
@@ -807,16 +824,19 @@ exports.getShopSettlementReport = asyncHandler(async (req, res) => {
     });
   });
 
-  const shopSummaries = Object.values(shopMap).filter(s => (!shopId || shopId === 'all' || s.shopId.toString() === shopId));
+  const shopSummaries = Object.values(shopMap).filter(s => {
+    if (!shopId || shopId === 'all') return true;
+    return s.shopId?.toString() === shopId.toString();
+  });
 
   const overallTotals = shopSummaries.reduce((acc, s) => {
-    acc.totalOrders += s.totalOrders;
-    acc.totalRevenue += s.totalRevenue;
-    acc.totalDocs += s.totalDocs;
-    acc.totalOrderPages += s.totalOrderPages;
-    acc.docsOver5Pages += s.docsOver5Pages;
-    acc.adminMarginReceivable += s.adminMarginReceivable;
-    acc.shopNetRevenue += s.shopNetRevenue;
+    acc.totalOrders += s.totalOrders || 0;
+    acc.totalRevenue += s.totalRevenue || 0;
+    acc.totalDocs += s.totalDocs || 0;
+    acc.totalOrderPages += s.totalOrderPages || 0;
+    acc.docsOver5Pages += s.docsOver5Pages || 0;
+    acc.adminMarginReceivable += s.adminMarginReceivable || 0;
+    acc.shopNetRevenue += s.shopNetRevenue || 0;
     return acc;
   }, { totalOrders: 0, totalRevenue: 0, totalDocs: 0, totalOrderPages: 0, docsOver5Pages: 0, adminMarginReceivable: 0, shopNetRevenue: 0 });
 
@@ -836,3 +856,4 @@ exports.getShopSettlementReport = asyncHandler(async (req, res) => {
     }
   });
 });
+
