@@ -226,20 +226,11 @@ function validateOrderPricing(order, shop) {
     errors.push(`Invalid shopReceivable: ${shopReceivable} (must be >= 0)`);
   }
 
-  // Validate relationships: total = shopReceivable + platformMargin
-  const expectedTotal = (shopReceivable || 0) + (platformMargin || 0);
-  if (Math.abs(total - expectedTotal) > 0.01) {
+  // Validate relationships: shopReceivable is 100% of printing & services
+  const expectedShopReceivable = (subtotal || 0) + (additionalServicesCharge || 0);
+  if (Math.abs(shopReceivable - expectedShopReceivable) > 0.01 && Math.abs(shopReceivable - (total - (platformMargin || 0))) > 0.01) {
     warnings.push(
-      `Total (${total}) doesn't match shopReceivable (${shopReceivable}) + platformMargin (${platformMargin || 0}). ` +
-      `Expected: ${expectedTotal}`
-    );
-  }
-
-  const expectedReceivable = total - platformMargin;
-  if (Math.abs(shopReceivable - expectedReceivable) > 0.01) {
-    warnings.push(
-      `Shop receivable (${shopReceivable}) doesn't match total (${total}) - margin (${platformMargin}). ` +
-      `Expected: ${expectedReceivable}`
+      `Shop receivable (${shopReceivable}) does not match expected subtotal + services (${expectedShopReceivable})`
     );
   }
 

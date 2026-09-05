@@ -89,12 +89,12 @@ const ShopSettlements = ({ orders = [], shopData }) => {
 
         <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm flex flex-col justify-center">
           <div className="flex items-center gap-3 text-gray-500 mb-2">
-            <ArrowDownRight size={20} className="text-red-500" />
-            <span className="font-medium">Platform Fees</span>
+            <ArrowDownRight size={20} className="text-orange-500" />
+            <span className="font-medium">Commission Due to Admin</span>
           </div>
           <h3 className="text-3xl font-bold text-gray-800">₹{totalPlatformFees.toFixed(2)}</h3>
-          <p className="text-sm text-gray-500 mt-2">
-            {shopData?.platformMargin > 0 ? `${shopData.platformMargin}% custom margin` : 'Admin Platform Commission'}
+          <p className="text-xs text-muted-foreground mt-2">
+            To be paid manually to Admin at month-end ({shopData?.platformMargin > 0 ? `${shopData.platformMargin}% rate` : 'Standard rate'})
           </p>
         </div>
       </div>

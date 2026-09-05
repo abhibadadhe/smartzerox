@@ -80,13 +80,13 @@ const calculateOrderPrice = (documents, shop, additionalServices = {}, globalCom
     additionalCharge += Math.ceil(subtotal * 0.2);
   }
 
-  // Shop Gross amount
+  // Shop Gross revenue (100% of printing and additional services)
   const shopGross = subtotal + additionalCharge;
 
-  // Shopkeeper receives: Shop Gross - Platform Commission (deducted from shopkeeper)
-  const shopReceivable = Math.max(0, Math.round((shopGross - percentCommission) * 100) / 100);
+  // Shopkeeper receives 100% of printing & services directly (commission is not deducted automatically; shopkeeper pays admin manually)
+  const shopReceivable = shopGross;
 
-  // Customer pays: Shop Gross + Flat Page Fee (only ₹1 if >5 pages; customer does NOT pay commission)
+  // Customer pays: Shop Gross + Flat Page Fee (only ₹1 if >5 pages)
   const total = Math.round((shopGross + pageFee) * 100) / 100;
 
   return {

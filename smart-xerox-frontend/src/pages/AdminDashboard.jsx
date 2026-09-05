@@ -638,7 +638,7 @@ const AdminDashboard = () => {
                 </div>
 
                 <div className="glass-card p-4 text-center bg-green-50/50 dark:bg-green-950/20 border-green-200 dark:border-green-800">
-                  <p className="text-xs text-green-800 dark:text-green-300 font-medium mb-1">Shopkeeper Payout Due</p>
+                  <p className="text-xs text-green-800 dark:text-green-300 font-medium mb-1">Shop Total Earnings</p>
                   <p className="font-heading text-xl sm:text-2xl font-bold text-green-700 dark:text-green-400">
                     ₹{settlementData.overallTotals.shopNetRevenue.toLocaleString('en-IN')}
                   </p>
@@ -646,11 +646,11 @@ const AdminDashboard = () => {
                 </div>
 
                 <div className="glass-card p-4 text-center bg-orange-50/50 dark:bg-orange-950/20 border-orange-200 dark:border-orange-800">
-                  <p className="text-xs text-orange-800 dark:text-orange-300 font-medium mb-1">Admin Margin (+₹1/doc)</p>
+                  <p className="text-xs text-orange-800 dark:text-orange-300 font-medium mb-1">Commission Due to Admin</p>
                   <p className="font-heading text-xl sm:text-2xl font-bold text-orange-600 dark:text-orange-400">
                     ₹{settlementData.overallTotals.adminMarginReceivable.toLocaleString('en-IN')}
                   </p>
-                  <span className="text-[10px] text-orange-700/80 mt-0.5 block">Retained in Admin Acc</span>
+                  <span className="text-[10px] text-orange-700/80 mt-0.5 block">Shopkeeper pays Admin manually</span>
                 </div>
               </div>
             )}
@@ -679,9 +679,9 @@ const AdminDashboard = () => {
                       <th className="px-4 py-3 text-left font-semibold">Shop Name & Owner</th>
                       <th className="px-4 py-3 text-center font-semibold">Orders Count</th>
                       <th className="px-4 py-3 text-center font-semibold">Printed Pages</th>
-                      <th className="px-4 py-3 text-right font-semibold">Gross Revenue</th>
-                      <th className="px-4 py-3 text-right font-semibold">Admin Margin (₹1)</th>
-                      <th className="px-4 py-3 text-right font-semibold text-green-700 dark:text-green-400">Shop Net Payout</th>
+                      <th className="px-4 py-3 text-right font-semibold">Customer Total</th>
+                      <th className="px-4 py-3 text-right font-semibold text-green-700 dark:text-green-400">Shop Earnings (100%)</th>
+                      <th className="px-4 py-3 text-right font-semibold text-orange-600 dark:text-orange-400">Commission Due to Admin</th>
                       <th className="px-4 py-3 text-center font-semibold">Audit</th>
                     </tr>
                   </thead>
@@ -714,11 +714,11 @@ const AdminDashboard = () => {
                         <td className="px-4 py-3.5 text-right font-semibold">
                           ₹{s.totalRevenue.toLocaleString('en-IN')}
                         </td>
-                        <td className="px-4 py-3.5 text-right font-semibold text-orange-600 dark:text-orange-400">
-                          ₹{s.adminMarginReceivable.toLocaleString('en-IN')}
-                        </td>
                         <td className="px-4 py-3.5 text-right font-bold text-green-700 dark:text-green-400">
                           ₹{s.shopNetRevenue.toLocaleString('en-IN')}
+                        </td>
+                        <td className="px-4 py-3.5 text-right font-semibold text-orange-600 dark:text-orange-400">
+                          ₹{s.adminMarginReceivable.toLocaleString('en-IN')}
                         </td>
                         <td className="px-4 py-3.5 text-center">
                           <Button 
