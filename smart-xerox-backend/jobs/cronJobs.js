@@ -127,18 +127,18 @@ const expirePendingPayments = cron.schedule('*/30 * * * *', async () => {
 }, { scheduled: false });
 
 /**
- * 15-Day Order Document Data & Storage Archival — runs daily at 3 AM
+ * 5-Day Order Document Data & Storage Archival — runs daily at 3 AM
  * 
- * Automatically deletes heavy PDF/DOCX/image files from storage after 15 days
+ * Automatically deletes heavy PDF/DOCX/image files from storage after 5 days for free storage
  * while 100% preserving all financial revenue data (pricing totals, payments, shop receivable, settlements, order numbers).
  */
-const archiveFifteenDayOldOrders = cron.schedule('0 3 * * *', async () => {
-  if (!(await acquireLock('archiveFifteenDayOldOrders', 55 * 60 * 1000))) return;
+const archiveFiveDayOldOrders = cron.schedule('0 3 * * *', async () => {
+  if (!(await acquireLock('archiveFiveDayOldOrders', 55 * 60 * 1000))) return;
   try {
-    const fifteenDaysAgo = moment().subtract(15, 'days').toDate();
+    const fiveDaysAgo = moment().subtract(5, 'days').toDate();
     
     const oldOrders = await Order.find({
-      createdAt: { $lt: fifteenDaysAgo },
+      createdAt: { $lt: fiveDaysAgo },
       dataArchived: { $ne: true }
     });
 
@@ -165,7 +165,7 @@ const archiveFifteenDayOldOrders = cron.schedule('0 3 * * *', async () => {
 
     const KitOrder = require('../modules/kit/kit.model');
     const oldKitOrders = await KitOrder.find({
-      createdAt: { $lt: fifteenDaysAgo },
+      createdAt: { $lt: fiveDaysAgo },
       dataArchived: { $ne: true }
     });
 
@@ -187,10 +187,10 @@ const archiveFifteenDayOldOrders = cron.schedule('0 3 * * *', async () => {
     }
 
     if (count > 0 || kitCount > 0) {
-      logger.info(`📦 15-Day Archival: Deleted file storage for ${count} order(s) and ${kitCount} kit order(s) (>15 days old) while 100% preserving all revenue & payment records.`);
+      logger.info(`📦 5-Day Archival: Deleted file storage for ${count} order(s) and ${kitCount} kit order(s) (>5 days old) while 100% preserving all revenue & payment records.`);
     }
   } catch (err) {
-    logger.error('15-Day order archival cron error:', err);
+    logger.error('5-Day order archival cron error:', err);
   }
 }, { scheduled: false });
 
@@ -305,7 +305,7 @@ const retryWebhooks = cron.schedule('*/10 * * * *', async () => {
 const startCronJobs = () => {
   checkExpiringOrders.start();
   expireOrders.start();
-  archiveFifteenDayOldOrders.start();
+  archiveFiveDayOldOrders.start();
   expirePendingPayments.start();
   autoRetryIncompleteJobs.start();
   reassignOfflinePrinterJobs.start();
@@ -313,13 +313,13 @@ const startCronJobs = () => {
   reEmitStaleAcceptedOrders.start();
   checkQueueHealth.start();
   retryWebhooks.start();
-  logger.info('Cron jobs started: expiry alerts (30min), order expiry (15min), 15-day archival (daily 3am), pending payment expiry (30min), auto-retry incomplete (15min), reassign offline jobs (10min), orphaned upload cleanup (30min), re-emit stale accepted (5min), queue health check (5min), webhook retry (10min)');
+  logger.info('Cron jobs started: expiry alerts (30min), order expiry (15min), 5-day storage archival (daily 3am), pending payment expiry (30min), auto-retry incomplete (15min), reassign offline jobs (10min), orphaned upload cleanup (30min), re-emit stale accepted (5min), queue health check (5min), webhook retry (10min)');
 };
 
 const stopCronJobs = () => {
   checkExpiringOrders.stop();
   expireOrders.stop();
-  archiveFifteenDayOldOrders.stop();
+  archiveFiveDayOldOrders.stop();
   expirePendingPayments.stop();
   autoRetryIncompleteJobs.stop();
   reassignOfflinePrinterJobs.stop();

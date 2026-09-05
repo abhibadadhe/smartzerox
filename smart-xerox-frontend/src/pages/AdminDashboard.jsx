@@ -8,7 +8,8 @@ import { motion } from 'framer-motion';
 import {
   Users, Store, Package, DollarSign, TrendingUp,
   Bell, Search, X, RefreshCw, CheckCircle, XCircle,
-  BarChart2, AlertCircle, Wrench, Megaphone
+  BarChart2, AlertCircle, Wrench, Megaphone,
+  Loader2, FileSpreadsheet, Calendar, Download, ChevronRight
 } from 'lucide-react';
 import Navbar from '@/components/layout/Navbar';
 import Footer from '@/components/layout/Footer';
@@ -85,6 +86,7 @@ const AdminDashboard = () => {
   const [settlementData, setSettlementData] = useState(null);
   const [settlementLoading, setSettlementLoading] = useState(false);
   const [selectedShopFilter, setSelectedShopFilter] = useState('all');
+  const [settlementMonth, setSettlementMonth] = useState('current');
   const [settlementFrom, setSettlementFrom] = useState('');
   const [settlementTo, setSettlementTo] = useState('');
   const [drilldownShop, setDrilldownShop] = useState(null);
@@ -94,8 +96,12 @@ const AdminDashboard = () => {
     try {
       const params = new URLSearchParams();
       if (selectedShopFilter && selectedShopFilter !== 'all') params.append('shopId', selectedShopFilter);
-      if (settlementFrom) params.append('from', settlementFrom);
-      if (settlementTo) params.append('to', settlementTo);
+      if (settlementMonth && settlementMonth !== 'custom') {
+        params.append('month', settlementMonth);
+      } else {
+        if (settlementFrom) params.append('from', settlementFrom);
+        if (settlementTo) params.append('to', settlementTo);
+      }
 
       const res = await adminAPI.getSettlementReport(params.toString());
       setSettlementData(res.data.data);
@@ -104,7 +110,7 @@ const AdminDashboard = () => {
     } finally {
       setSettlementLoading(false);
     }
-  }, [selectedShopFilter, settlementFrom, settlementTo]);
+  }, [selectedShopFilter, settlementMonth, settlementFrom, settlementTo]);
 
   useEffect(() => {
     if (activeTab === 'settlement') {
@@ -525,6 +531,300 @@ const AdminDashboard = () => {
                 </div>
               )}
             </div>
+          </div>
+        )}
+
+
+        {/* ── MONTHLY CLOSURE & SETTLEMENT REPORT ── */}
+        {activeTab === 'settlement' && (
+          <div className="space-y-6">
+            {/* 7-Day Window Notice */}
+            {settlementData?.period?.isSettlementWindowActive && (
+              <div className="bg-gradient-to-r from-emerald-500/10 via-teal-500/10 to-green-500/10 border-2 border-emerald-500/30 rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm">
+                <div className="flex items-start gap-3">
+                  <div className="p-2.5 bg-emerald-500 text-white rounded-xl shadow-md shrink-0">
+                    <Calendar className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-heading font-bold text-emerald-950 dark:text-emerald-100 text-base">
+                        🟢 7-Day Monthly Settlement Window is ACTIVE
+                      </span>
+                      <span className="bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-200 text-xs font-semibold px-2 py-0.5 rounded-full">
+                        {settlementData.period.daysRemainingInWindow} days remaining
+                      </span>
+                    </div>
+                    <p className="text-xs text-emerald-800/80 dark:text-emerald-300/80 mt-1">
+                      Monthly accounts from 1st to 30th/31st are finalized. Available for 7 days post month-end to review each shopkeeper's net revenue and complete bank/UPI payouts.
+                    </p>
+                  </div>
+                </div>
+                <Button 
+                  onClick={() => { setSettlementMonth('last_month'); }}
+                  variant="outline"
+                  className="border-emerald-600 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-400 dark:text-emerald-300 font-semibold text-xs shrink-0"
+                >
+                  📦 View Closed Month Report
+                </Button>
+              </div>
+            )}
+
+            {/* Filter & Period Selector Bar */}
+            <div className="glass-card p-4 sm:p-5 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs font-semibold text-muted-foreground mr-1">Period:</span>
+                <button
+                  type="button"
+                  onClick={() => { setSettlementMonth('current'); }}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${settlementMonth === 'current' ? 'sunrise-gradient text-white shadow-sm' : 'bg-secondary text-secondary-foreground hover:bg-secondary/80'}`}
+                >
+                  📅 Current Month
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setSettlementMonth('last_month'); }}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${settlementMonth === 'last_month' ? 'sunrise-gradient text-white shadow-sm' : 'bg-secondary text-secondary-foreground hover:bg-secondary/80'}`}
+                >
+                  📦 Last Month (Closed)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setSettlementMonth('custom'); }}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${settlementMonth === 'custom' ? 'sunrise-gradient text-white shadow-sm' : 'bg-secondary text-secondary-foreground hover:bg-secondary/80'}`}
+                >
+                  🗓️ Custom Range
+                </button>
+              </div>
+
+              {settlementMonth === 'custom' && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <Input type="date" value={settlementFrom} onChange={e => setSettlementFrom(e.target.value)} className="h-8 text-xs w-36" />
+                  <span className="text-xs text-muted-foreground">to</span>
+                  <Input type="date" value={settlementTo} onChange={e => setSettlementTo(e.target.value)} className="h-8 text-xs w-36" />
+                </div>
+              )}
+
+              <div className="flex items-center gap-2 shrink-0">
+                <select 
+                  value={selectedShopFilter} 
+                  onChange={e => setSelectedShopFilter(e.target.value)}
+                  className="rounded-lg border border-border bg-background px-3 h-9 text-xs font-medium"
+                >
+                  <option value="all">All Shops ({shops.length})</option>
+                  {shops.map(s => (
+                    <option key={s._id} value={s._id}>{s.name}</option>
+                  ))}
+                </select>
+
+                <Button 
+                  onClick={fetchSettlementReport} 
+                  size="sm" 
+                  variant="outline" 
+                  disabled={settlementLoading}
+                  className="h-9 px-3"
+                >
+                  <RefreshCw className={`h-3.5 w-3.5 ${settlementLoading ? 'animate-spin' : ''}`} />
+                </Button>
+
+                <Button 
+                  onClick={exportSettlementCSV} 
+                  size="sm" 
+                  className="sunrise-gradient text-white font-semibold h-9 px-3 flex items-center gap-1.5"
+                >
+                  <Download className="h-3.5 w-3.5" /> Export CSV
+                </Button>
+              </div>
+            </div>
+
+            {/* Financial Summary Metric Cards */}
+            {settlementData?.overallTotals && (
+              <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
+                <div className="glass-card p-4 text-center">
+                  <p className="text-xs text-muted-foreground font-medium mb-1">Total Gross Revenue</p>
+                  <p className="font-heading text-xl sm:text-2xl font-bold text-slate-900 dark:text-slate-100">
+                    ₹{settlementData.overallTotals.totalRevenue.toLocaleString('en-IN')}
+                  </p>
+                  <span className="text-[10px] text-muted-foreground mt-0.5 block">{settlementData.period?.label}</span>
+                </div>
+
+                <div className="glass-card p-4 text-center">
+                  <p className="text-xs text-muted-foreground font-medium mb-1">Total Orders</p>
+                  <p className="font-heading text-xl sm:text-2xl font-bold text-blue-600 dark:text-blue-400">
+                    {settlementData.overallTotals.totalOrders.toLocaleString('en-IN')}
+                  </p>
+                  <span className="text-[10px] text-muted-foreground mt-0.5 block">Completed & Paid</span>
+                </div>
+
+                <div className="glass-card p-4 text-center">
+                  <p className="text-xs text-muted-foreground font-medium mb-1">Total Pages / Docs</p>
+                  <p className="font-heading text-xl sm:text-2xl font-bold text-purple-600 dark:text-purple-400">
+                    {settlementData.overallTotals.totalOrderPages || settlementData.overallTotals.totalDocs}
+                  </p>
+                  <span className="text-[10px] text-muted-foreground mt-0.5 block">{settlementData.overallTotals.totalDocs} file(s)</span>
+                </div>
+
+                <div className="glass-card p-4 text-center bg-green-50/50 dark:bg-green-950/20 border-green-200 dark:border-green-800">
+                  <p className="text-xs text-green-800 dark:text-green-300 font-medium mb-1">Shopkeeper Payout Due</p>
+                  <p className="font-heading text-xl sm:text-2xl font-bold text-green-700 dark:text-green-400">
+                    ₹{settlementData.overallTotals.shopNetRevenue.toLocaleString('en-IN')}
+                  </p>
+                  <span className="text-[10px] text-green-700/80 mt-0.5 block">100% Printing & Services</span>
+                </div>
+
+                <div className="glass-card p-4 text-center bg-orange-50/50 dark:bg-orange-950/20 border-orange-200 dark:border-orange-800">
+                  <p className="text-xs text-orange-800 dark:text-orange-300 font-medium mb-1">Admin Margin (+₹1/doc)</p>
+                  <p className="font-heading text-xl sm:text-2xl font-bold text-orange-600 dark:text-orange-400">
+                    ₹{settlementData.overallTotals.adminMarginReceivable.toLocaleString('en-IN')}
+                  </p>
+                  <span className="text-[10px] text-orange-700/80 mt-0.5 block">Retained in Admin Acc</span>
+                </div>
+              </div>
+            )}
+
+            {/* Shop Breakdown Table */}
+            <div className="glass-card overflow-hidden">
+              <div className="p-4 border-b border-border flex items-center justify-between">
+                <div>
+                  <h3 className="font-heading font-semibold text-base flex items-center gap-2">
+                    <FileSpreadsheet className="h-4 w-4 text-orange-500" />
+                    Shop-by-Shop Settlement Breakdown ({settlementData?.period?.label})
+                  </h3>
+                  <p className="text-xs text-muted-foreground mt-0.5">Click any shop to drill down and inspect individual customer orders</p>
+                </div>
+                {settlementData?.shops && (
+                  <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-secondary text-secondary-foreground">
+                    {settlementData.shops.length} Shop(s)
+                  </span>
+                )}
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-border bg-secondary/50 text-xs uppercase tracking-wider text-muted-foreground">
+                      <th className="px-4 py-3 text-left font-semibold">Shop Name & Owner</th>
+                      <th className="px-4 py-3 text-center font-semibold">Orders Count</th>
+                      <th className="px-4 py-3 text-center font-semibold">Printed Pages</th>
+                      <th className="px-4 py-3 text-right font-semibold">Gross Revenue</th>
+                      <th className="px-4 py-3 text-right font-semibold">Admin Margin (₹1)</th>
+                      <th className="px-4 py-3 text-right font-semibold text-green-700 dark:text-green-400">Shop Net Payout</th>
+                      <th className="px-4 py-3 text-center font-semibold">Audit</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {settlementLoading ? (
+                      <tr>
+                        <td colSpan={7} className="px-4 py-12 text-center text-muted-foreground">
+                          <Loader2 className="h-6 w-6 animate-spin mx-auto mb-2 text-orange-500" />
+                          Loading settlement reports...
+                        </td>
+                      </tr>
+                    ) : !settlementData?.shops?.length ? (
+                      <tr>
+                        <td colSpan={7} className="px-4 py-12 text-center text-muted-foreground">
+                          No settlement records found for this period.
+                        </td>
+                      </tr>
+                    ) : settlementData.shops.map((s) => (
+                      <tr key={s.shopId} className="border-b border-border/50 hover:bg-secondary/20 transition-colors">
+                        <td className="px-4 py-3.5">
+                          <p className="font-semibold text-sm text-foreground">{s.shopName}</p>
+                          <p className="text-xs text-muted-foreground">{s.ownerName} · 📞 {s.ownerPhone || 'N/A'}</p>
+                        </td>
+                        <td className="px-4 py-3.5 text-center font-semibold text-blue-600 dark:text-blue-400">
+                          {s.totalOrders}
+                        </td>
+                        <td className="px-4 py-3.5 text-center text-xs text-muted-foreground">
+                          {s.totalOrderPages || s.totalDocs} pages ({s.totalDocs} docs)
+                        </td>
+                        <td className="px-4 py-3.5 text-right font-semibold">
+                          ₹{s.totalRevenue.toLocaleString('en-IN')}
+                        </td>
+                        <td className="px-4 py-3.5 text-right font-semibold text-orange-600 dark:text-orange-400">
+                          ₹{s.adminMarginReceivable.toLocaleString('en-IN')}
+                        </td>
+                        <td className="px-4 py-3.5 text-right font-bold text-green-700 dark:text-green-400">
+                          ₹{s.shopNetRevenue.toLocaleString('en-IN')}
+                        </td>
+                        <td className="px-4 py-3.5 text-center">
+                          <Button 
+                            size="sm" 
+                            variant="outline" 
+                            onClick={() => setDrilldownShop(s)}
+                            className="text-xs h-7 px-2.5 gap-1 hover:bg-orange-50 hover:text-orange-700 hover:border-orange-300"
+                          >
+                            🔍 {s.orders.length} Orders <ChevronRight className="h-3 w-3" />
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Drilldown Shop Orders Modal */}
+            {drilldownShop && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 overflow-y-auto" onClick={() => setDrilldownShop(null)}>
+                <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
+                  className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 max-w-4xl w-full my-8 shadow-2xl space-y-4" onClick={e => e.stopPropagation()}>
+                  
+                  <div className="flex items-start justify-between border-b pb-3">
+                    <div>
+                      <h3 className="font-heading font-bold text-lg text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                        📑 {drilldownShop.shopName} — Orders Breakdown ({settlementData?.period?.label})
+                      </h3>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        Owner: {drilldownShop.ownerName} · Phone: {drilldownShop.ownerPhone} · Payout Due: <strong className="text-green-600 font-bold">₹{drilldownShop.shopNetRevenue}</strong> (Admin Margin: ₹{drilldownShop.adminMarginReceivable})
+                      </p>
+                    </div>
+                    <button type="button" onClick={() => setDrilldownShop(null)}><X className="h-5 w-5 text-slate-400" /></button>
+                  </div>
+
+                  <div className="max-h-[60vh] overflow-y-auto pr-1">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="border-b bg-secondary/50 text-muted-foreground text-left">
+                          <th className="p-2.5 font-semibold">Order #</th>
+                          <th className="p-2.5 font-semibold">Customer</th>
+                          <th className="p-2.5 font-semibold text-center">Pages</th>
+                          <th className="p-2.5 font-semibold text-right">Total Amount</th>
+                          <th className="p-2.5 font-semibold text-right">Admin Fee</th>
+                          <th className="p-2.5 font-semibold text-right">Shop Receivable</th>
+                          <th className="p-2.5 font-semibold text-center">Status</th>
+                          <th className="p-2.5 font-semibold">Date</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {drilldownShop.orders.map(o => (
+                          <tr key={o.orderId} className="border-b border-border/40 hover:bg-secondary/20">
+                            <td className="p-2.5 font-mono font-bold">#{o.orderNumber || o.orderId.slice(-6).toUpperCase()}</td>
+                            <td className="p-2.5">
+                              <p className="font-medium">{o.customerName}</p>
+                              <p className="text-[10px] text-muted-foreground">{o.customerPhone}</p>
+                            </td>
+                            <td className="p-2.5 text-center font-medium">{o.totalOrderPages || o.totalDocs}</td>
+                            <td className="p-2.5 text-right font-semibold">₹{o.totalAmount}</td>
+                            <td className="p-2.5 text-right font-medium text-orange-600">₹{o.adminMargin}</td>
+                            <td className="p-2.5 text-right font-bold text-green-600">₹{o.shopReceivable}</td>
+                            <td className="p-2.5 text-center">
+                              <span className={`rounded-full px-2 py-0.5 text-[10px] ${statusColors[o.status] || 'bg-muted text-muted-foreground'}`}>
+                                {o.status}
+                              </span>
+                            </td>
+                            <td className="p-2.5 text-muted-foreground">{new Date(o.createdAt).toLocaleDateString('en-IN')}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div className="flex justify-end pt-3 border-t">
+                    <Button variant="outline" size="sm" onClick={() => setDrilldownShop(null)}>Close</Button>
+                  </div>
+                </motion.div>
+              </div>
+            )}
           </div>
         )}
 

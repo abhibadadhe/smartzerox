@@ -668,9 +668,47 @@ exports.createShopWithCredentials = asyncHandler(async (req, res) => {
 
 // ─── Shop Settlement & Admin Margin Report ───────────────────────────────────
 exports.getShopSettlementReport = asyncHandler(async (req, res) => {
-  const { shopId, from, to } = req.query;
+  const { shopId, from, to, month } = req.query;
   const Order = require('../models/Order');
   const Shop = require('../models/Shop');
+
+  const now = new Date();
+  const currentDay = now.getDate();
+  const isSettlementWindowActive = currentDay <= 7; // Available for 7 days after 30th/31st (1st to 7th)
+
+  let startDate = null;
+  let endDate = null;
+  let periodLabel = 'Custom Period';
+  let isMonthClosed = false;
+
+  if (month === 'last_month') {
+    const lastMonthDate = moment().subtract(1, 'month');
+    startDate = lastMonthDate.clone().startOf('month').toDate();
+    endDate = lastMonthDate.clone().endOf('month').toDate();
+    periodLabel = `${lastMonthDate.format('MMMM YYYY')} (Closed Month)`;
+    isMonthClosed = true;
+  } else if (month === 'current') {
+    startDate = moment().startOf('month').toDate();
+    endDate = moment().endOf('month').toDate();
+    periodLabel = `${moment().format('MMMM YYYY')} (Current Month)`;
+    isMonthClosed = false;
+  } else if (month && /^\d{4}-\d{2}$/.test(month)) {
+    const parsedMonth = moment(month, 'YYYY-MM');
+    startDate = parsedMonth.clone().startOf('month').toDate();
+    endDate = parsedMonth.clone().endOf('month').toDate();
+    periodLabel = parsedMonth.format('MMMM YYYY');
+    isMonthClosed = parsedMonth.isBefore(moment().startOf('month'));
+  } else if (from || to) {
+    if (from) startDate = new Date(from);
+    if (to) endDate = new Date(to);
+    periodLabel = `${from || 'Start'} to ${to || 'Now'}`;
+  } else {
+    // Default to current month (1st to 30/31)
+    startDate = moment().startOf('month').toDate();
+    endDate = moment().endOf('month').toDate();
+    periodLabel = `${moment().format('MMMM YYYY')} (Current Month)`;
+    isMonthClosed = false;
+  }
 
   const match = {
     status: { $in: ['paid', 'accepted', 'printing', 'ready', 'picked_up'] }
@@ -680,10 +718,10 @@ exports.getShopSettlementReport = asyncHandler(async (req, res) => {
     match.shop = new (require('mongoose').Types.ObjectId)(shopId);
   }
 
-  if (from || to) {
+  if (startDate || endDate) {
     match.createdAt = {};
-    if (from) match.createdAt.$gte = new Date(from);
-    if (to) match.createdAt.$lte = new Date(to);
+    if (startDate) match.createdAt.$gte = startDate;
+    if (endDate) match.createdAt.$lte = endDate;
   }
 
   const orders = await Order.find(match)
@@ -704,6 +742,7 @@ exports.getShopSettlementReport = asyncHandler(async (req, res) => {
       totalOrders: 0,
       totalRevenue: 0,
       totalDocs: 0,
+      totalOrderPages: 0,
       docsOver5Pages: 0,
       adminMarginReceivable: 0,
       shopNetRevenue: 0,
@@ -723,6 +762,7 @@ exports.getShopSettlementReport = asyncHandler(async (req, res) => {
         totalOrders: 0,
         totalRevenue: 0,
         totalDocs: 0,
+        totalOrderPages: 0,
         docsOver5Pages: 0,
         adminMarginReceivable: 0,
         shopNetRevenue: 0,
@@ -746,6 +786,7 @@ exports.getShopSettlementReport = asyncHandler(async (req, res) => {
     targetShop.totalOrders += 1;
     targetShop.totalRevenue += totalAmount;
     targetShop.totalDocs += orderTotalDocs;
+    targetShop.totalOrderPages += orderTotalPages;
     if (isOver5Pages) targetShop.docsOver5Pages += 1;
     targetShop.adminMarginReceivable += adminMargin;
     targetShop.shopNetRevenue += shopReceivable;
@@ -772,15 +813,24 @@ exports.getShopSettlementReport = asyncHandler(async (req, res) => {
     acc.totalOrders += s.totalOrders;
     acc.totalRevenue += s.totalRevenue;
     acc.totalDocs += s.totalDocs;
+    acc.totalOrderPages += s.totalOrderPages;
     acc.docsOver5Pages += s.docsOver5Pages;
     acc.adminMarginReceivable += s.adminMarginReceivable;
     acc.shopNetRevenue += s.shopNetRevenue;
     return acc;
-  }, { totalOrders: 0, totalRevenue: 0, totalDocs: 0, docsOver5Pages: 0, adminMarginReceivable: 0, shopNetRevenue: 0 });
+  }, { totalOrders: 0, totalRevenue: 0, totalDocs: 0, totalOrderPages: 0, docsOver5Pages: 0, adminMarginReceivable: 0, shopNetRevenue: 0 });
 
   res.status(200).json({
     success: true,
     data: {
+      period: {
+        label: periodLabel,
+        startDate,
+        endDate,
+        isClosed: isMonthClosed,
+        isSettlementWindowActive,
+        daysRemainingInWindow: Math.max(0, 7 - currentDay + 1)
+      },
       overallTotals,
       shops: shopSummaries
     }

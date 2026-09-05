@@ -143,15 +143,26 @@ exports.getShopDashboard = asyncHandler(async (req, res) => {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  const [pendingOrders, todayOrders, totalRevenue, totalOrders] = await Promise.all([
+  // Month cycle: starts from 1st day of the current month at 00:00:00 (resets on the 1st of each month)
+  const currentMonthStart = new Date(today.getFullYear(), today.getMonth(), 1, 0, 0, 0, 0);
+
+  const [pendingOrders, todayOrders, monthRevenueAgg, monthOrders, lifetimeRevenueAgg, lifetimeOrders] = await Promise.all([
     Order.countDocuments({ shop: shop._id, status: { $in: ['paid', 'accepted', 'printing'] } }),
     Order.countDocuments({ shop: shop._id, createdAt: { $gte: today } }),
     Order.aggregate([
-      { $match: { shop: shop._id, status: 'picked_up' } },
+      { $match: { shop: shop._id, status: { $in: ['paid', 'accepted', 'printing', 'ready', 'picked_up'] }, createdAt: { $gte: currentMonthStart } } },
       { $group: { _id: null, total: { $sum: '$pricing.shopReceivable' } } },
     ]),
-    Order.countDocuments({ shop: shop._id }),
+    Order.countDocuments({ shop: shop._id, createdAt: { $gte: currentMonthStart }, status: { $ne: 'pending_payment' } }),
+    Order.aggregate([
+      { $match: { shop: shop._id, status: { $in: ['paid', 'accepted', 'printing', 'ready', 'picked_up'] } } },
+      { $group: { _id: null, total: { $sum: '$pricing.shopReceivable' } } },
+    ]),
+    Order.countDocuments({ shop: shop._id, status: { $ne: 'pending_payment' } }),
   ]);
+
+  const monthRevenue = monthRevenueAgg[0]?.total || 0;
+  const lifetimeRevenue = lifetimeRevenueAgg[0]?.total || 0;
 
   res.status(200).json({
     success: true,
@@ -160,8 +171,12 @@ exports.getShopDashboard = asyncHandler(async (req, res) => {
       stats: {
         pendingOrders,
         todayOrders,
-        totalRevenue: totalRevenue[0]?.total || 0,
-        totalOrders,
+        totalRevenue: monthRevenue, // Monthly active revenue (1st to 30/31, reset on 1st)
+        totalOrders: monthOrders,   // Monthly orders count (1st to 30/31, reset on 1st)
+        monthRevenue,
+        monthOrders,
+        lifetimeRevenue,
+        lifetimeOrders,
       },
     },
   });
