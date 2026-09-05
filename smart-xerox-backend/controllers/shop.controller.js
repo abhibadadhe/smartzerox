@@ -2,6 +2,7 @@ const Shop = require('../models/Shop');
 const User = require('../models/User');
 const Order = require('../models/Order');
 const Printer = require('../models/Printer');
+const Settings = require('../models/Settings');
 const { AppError, asyncHandler } = require('../utils/helpers');
 const { emitToShop, emitToAdmin, evictShopCache } = require('../config/socket');
 const logger = require('../config/logger');
@@ -352,13 +353,25 @@ exports.getShopReviews = asyncHandler(async (req, res) => {
   });
 });
 
-// ─── Get My Shop (simple object, for ShopDashboard header) ──────────────────
+// ─── Get My Shop (simple object, for ShopDashboard header & settlements) ──
 exports.getMyShop = asyncHandler(async (req, res) => {
   const shop = await findMyShop(req.user.id);
   if (!shop) {
     return res.status(200).json({ success: true, data: { shop: null } });
   }
-  res.status(200).json({ success: true, data: { shop } });
+
+  const platformSettings = await Settings.getGlobal();
+  const globalCommissionRate = Number(platformSettings?.defaultCommissionRate || 0);
+  const customMargin = (shop.platformMargin !== undefined && shop.platformMargin !== null) ? Number(shop.platformMargin) : 0;
+  const effectiveCommissionRate = customMargin > 0 ? customMargin : globalCommissionRate;
+
+  const shopObj = shop.toObject ? shop.toObject() : { ...shop };
+  shopObj.globalCommissionRate = globalCommissionRate;
+  shopObj.customPlatformMargin = customMargin;
+  shopObj.effectiveCommissionRate = effectiveCommissionRate;
+  shopObj.platformMargin = effectiveCommissionRate; // Denormalize effective rate for frontend display
+
+  res.status(200).json({ success: true, data: { shop: shopObj } });
 });
 
 // ─── Get Withdrawals ──────────────────────────────────────────────────────────

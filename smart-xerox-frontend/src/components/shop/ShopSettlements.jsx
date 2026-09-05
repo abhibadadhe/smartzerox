@@ -50,13 +50,20 @@ const ShopSettlements = ({ orders = [], shopData }) => {
   const pickedUpOrders = orders.filter(o => o.status === 'picked_up').sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
   const totalEarnings = shopData?.totalRevenue || 0;
   
+  const appliedCommissionRate = Number(
+    shopData?.effectiveCommissionRate ?? 
+    shopData?.platformMargin ?? 
+    shopData?.globalCommissionRate ?? 
+    0
+  );
+
   // Percentage commission due to admin (shopkeeper pays manually to admin at month-end)
   const totalCommissionDue = orders.reduce((sum, o) => {
-    if (o.pricing?.percentCommission !== undefined) {
+    if (o.pricing?.percentCommission !== undefined && o.pricing?.percentCommission > 0) {
       return sum + Number(o.pricing.percentCommission);
     }
     const subtotal = Number(o.pricing?.subtotal || 0);
-    const rate = Number(o.pricing?.commissionPercent || shopData?.platformMargin || 0);
+    const rate = Number(o.pricing?.commissionPercent || appliedCommissionRate || 0);
     return sum + (rate > 0 ? Math.round((subtotal * rate) / 100 * 100) / 100 : 0);
   }, 0);
   
@@ -103,7 +110,7 @@ const ShopSettlements = ({ orders = [], shopData }) => {
           </div>
           <h3 className="text-3xl font-bold text-gray-800">₹{totalCommissionDue.toFixed(2)}</h3>
           <p className="text-xs text-muted-foreground mt-2">
-            To be paid manually to Admin at month-end ({shopData?.platformMargin > 0 ? `${shopData.platformMargin}% rate` : 'Standard rate'})
+            To be paid manually to Admin at month-end ({appliedCommissionRate}% rate applied by Admin)
           </p>
         </div>
       </div>
