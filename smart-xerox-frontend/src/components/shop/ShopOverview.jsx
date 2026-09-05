@@ -14,12 +14,18 @@ const StatCard = ({ title, value, icon: Icon, colorClass, bgClass }) => (
 );
 
 const ShopOverview = ({ orders = [], shopData, onToggleStatus, token, user }) => {
-  const today = new Date().toDateString();
-  const todayOrders = orders.filter(o => new Date(o.createdAt).toDateString() === today).length;
-  const pendingOrders = orders.filter(o => ['paid', 'pending', 'accepted', 'printing', 'ready'].includes(o.status)).length;
-  const revenueOrders = orders.filter(o => ['paid', 'pending', 'accepted', 'printing', 'ready', 'picked_up'].includes(o.status));
-  const totalRevenue = revenueOrders.reduce((sum, o) => sum + (o.pricing?.total || 0), 0);
-  const totalOrders = orders.length;
+  const now = new Date();
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+  const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+
+  const todayOrders = orders.filter(o => new Date(o.createdAt) >= todayStart && o.status !== 'pending_payment').length;
+  const pendingOrders = orders.filter(o => ['paid', 'accepted', 'queued', 'printing', 'ready'].includes(o.status)).length;
+  
+  // Current calendar month orders (resets on 1st of every month)
+  const monthOrders = orders.filter(o => new Date(o.createdAt) >= currentMonthStart);
+  const monthRevenueOrders = monthOrders.filter(o => ['paid', 'accepted', 'queued', 'printing', 'ready', 'picked_up'].includes(o.status));
+  const monthRevenue = monthRevenueOrders.reduce((sum, o) => sum + (o.pricing?.shopReceivable ?? o.pricing?.total ?? 0), 0);
+  const totalMonthOrders = monthOrders.filter(o => o.status !== 'pending_payment').length;
 
   return (
     <div className="space-y-8">
@@ -53,8 +59,8 @@ const ShopOverview = ({ orders = [], shopData, onToggleStatus, token, user }) =>
           bgClass="bg-gradient-to-br from-blue-50 to-blue-100 text-blue-900"
         />
         <StatCard
-          title="Total Revenue"
-          value={`₹${totalRevenue.toFixed(0)}`}
+          title="Monthly Revenue"
+          value={`₹${monthRevenue.toFixed(0)}`}
           icon={IndianRupee}
           colorClass="bg-gradient-to-br from-emerald-500 to-emerald-600"
           bgClass="bg-gradient-to-br from-emerald-50 to-emerald-100 text-emerald-900"
@@ -67,8 +73,8 @@ const ShopOverview = ({ orders = [], shopData, onToggleStatus, token, user }) =>
           bgClass="bg-gradient-to-br from-amber-50 to-orange-100 text-amber-900"
         />
         <StatCard
-          title="Total Orders"
-          value={totalOrders}
+          title="Monthly Orders"
+          value={totalMonthOrders}
           icon={CheckCircle}
           colorClass="bg-gradient-to-br from-violet-500 to-purple-600"
           bgClass="bg-gradient-to-br from-violet-50 to-purple-100 text-violet-900"
@@ -77,5 +83,6 @@ const ShopOverview = ({ orders = [], shopData, onToggleStatus, token, user }) =>
     </div>
   );
 };
+
 
 export default ShopOverview;

@@ -127,13 +127,12 @@ const expirePendingPayments = cron.schedule('*/30 * * * *', async () => {
 }, { scheduled: false });
 
 /**
- * 5-Day Order Document Data & Storage Archival — runs daily at 3 AM
+ * 5-Day Order Document Data & Storage Archival
  * 
  * Automatically deletes heavy PDF/DOCX/image files from storage after 5 days for free storage
  * while 100% preserving all financial revenue data (pricing totals, payments, shop receivable, settlements, order numbers).
  */
-const archiveFiveDayOldOrders = cron.schedule('0 3 * * *', async () => {
-  if (!(await acquireLock('archiveFiveDayOldOrders', 55 * 60 * 1000))) return;
+const runFiveDayArchival = async () => {
   try {
     const fiveDaysAgo = moment().subtract(5, 'days').toDate();
     
@@ -190,9 +189,15 @@ const archiveFiveDayOldOrders = cron.schedule('0 3 * * *', async () => {
       logger.info(`📦 5-Day Archival: Deleted file storage for ${count} order(s) and ${kitCount} kit order(s) (>5 days old) while 100% preserving all revenue & payment records.`);
     }
   } catch (err) {
-    logger.error('5-Day order archival cron error:', err);
+    logger.error('5-Day order archival error:', err);
   }
+};
+
+const archiveFiveDayOldOrders = cron.schedule('0 3 * * *', async () => {
+  if (!(await acquireLock('archiveFiveDayOldOrders', 55 * 60 * 1000))) return;
+  await runFiveDayArchival();
 }, { scheduled: false });
+
 
 /**
  * Auto-retry incomplete print jobs after 30 minutes — runs every 15 minutes
@@ -313,8 +318,12 @@ const startCronJobs = () => {
   reEmitStaleAcceptedOrders.start();
   checkQueueHealth.start();
   retryWebhooks.start();
-  logger.info('Cron jobs started: expiry alerts (30min), order expiry (15min), 5-day storage archival (daily 3am), pending payment expiry (30min), auto-retry incomplete (15min), reassign offline jobs (10min), orphaned upload cleanup (30min), re-emit stale accepted (5min), queue health check (5min), webhook retry (10min)');
+  logger.info('Cron jobs started: expiry alerts (30min), order expiry (15min), 5-day storage archival (daily 3am + startup), pending payment expiry (30min), auto-retry incomplete (15min), reassign offline jobs (10min), orphaned upload cleanup (30min), re-emit stale accepted (5min), queue health check (5min), webhook retry (10min)');
+  
+  // Run initial 5-day storage cleanup on boot
+  runFiveDayArchival().catch(err => logger.error('Initial 5-day archival on boot error:', err));
 };
+
 
 const stopCronJobs = () => {
   checkExpiringOrders.stop();
