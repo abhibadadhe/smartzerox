@@ -3,16 +3,16 @@
  * 
  * Commission & Fee Rules:
  *   - Base printing cost is calculated per document range (B&W or Color, Single or Double-sided).
- *   - ADMIN PLATFORM FEE: If a document has > 5 pages, add ₹1 extra per document.
- *     (If document has <= 5 pages, admin fee = ₹0).
+ *   - ADMIN PLATFORM FEE: If overall pages count across the whole order is > 5 pages, add ₹1 extra for admin.
+ *     (If overall order pages <= 5, admin fee = ₹0).
  *   - Shopkeeper receives: subtotal (printing cost) + additionalServices (spiral/lamination).
- *   - Admin receives: totalAdminFee (₹1 per document with > 5 pages).
+ *   - Admin receives: totalAdminFee (₹1 if total order pages > 5).
  *   - Student pays total = shopReceivable + totalAdminFee.
  */
 const calculateOrderPrice = (documents, shop, additionalServices = {}, globalCommissionRate = 0) => {
   let subtotal = 0;
   let totalPrintedSheets = 0;
-  let totalAdminFee = 0;
+  let totalOrderPages = 0;
   const documentPrices = [];
 
   documents.forEach((doc) => {
@@ -26,22 +26,14 @@ const calculateOrderPrice = (documents, shop, additionalServices = {}, globalCom
       );
     }
 
-    // Calculate total pages for this document
-    const docTotalPages = printingRanges.reduce((sum, r) => {
-      const p = (r.rangeEnd - r.rangeStart + 1) * (r.copies || 1);
-      return sum + p;
-    }, 0) || (detectedPages || 1);
-
-    // Rule: If document has > 5 pages, add ₹1 extra fee for admin
-    if (docTotalPages > 5) {
-      totalAdminFee += 1;
-    }
-
     // Process each printing range
     printingRanges.forEach((range) => {
-      const { rangeStart, rangeEnd, copies, colorMode, sides, pagesPerSheet = 1 } = range;
-      const pagesInRange = rangeEnd - rangeStart + 1;
+      const { rangeStart, rangeEnd, copies = 1, colorMode, sides, pagesPerSheet = 1 } = range;
+      const pagesInRange = Math.max(1, rangeEnd - rangeStart + 1);
       
+      // Accumulate overall order pages
+      totalOrderPages += pagesInRange * copies;
+
       const physicalSidesNeeded = Math.ceil(pagesInRange / pagesPerSheet);
       const effectiveSheets = sides === 'double' ? Math.ceil(physicalSidesNeeded / 2) : physicalSidesNeeded;
       totalPrintedSheets += effectiveSheets * copies;
@@ -57,6 +49,9 @@ const calculateOrderPrice = (documents, shop, additionalServices = {}, globalCom
     documentPrices.push(docPrice);
     subtotal += docPrice;
   });
+
+  // Rule: If overall order page count > 5, add ₹1 extra fee for Admin
+  const totalAdminFee = totalOrderPages > 5 ? 1 : 0;
 
   // Additional services (spiral, lamination, etc.)
   let additionalCharge = 0;
@@ -82,8 +77,9 @@ const calculateOrderPrice = (documents, shop, additionalServices = {}, globalCom
     subtotal,
     documentPrices,
     additionalCharge,
-    platformMargin: totalAdminFee, // ₹1 per doc with > 5 pages
+    platformMargin: totalAdminFee, // ₹1 if overall pages > 5, ₹0 if <= 5
     adminFee: totalAdminFee,
+    totalOrderPages,
     total,
     shopReceivable,
   };

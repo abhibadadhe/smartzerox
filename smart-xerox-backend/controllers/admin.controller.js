@@ -730,22 +730,23 @@ exports.getShopSettlementReport = asyncHandler(async (req, res) => {
       };
     }
 
-    let orderDocsOver5 = 0;
+    let orderTotalPages = 0;
     let orderTotalDocs = order.documents?.length || 1;
     (order.documents || []).forEach(doc => {
       const docPages = (doc.printingRanges || []).reduce((sum, r) => sum + ((r.rangeEnd - r.rangeStart + 1) * (r.copies || 1)), 0) || (doc.detectedPages || 1);
-      if (docPages > 5) orderDocsOver5++;
+      orderTotalPages += docPages;
     });
 
-    const adminMargin = orderDocsOver5 * 1; // ₹1 per document with > 5 pages
+    const isOver5Pages = orderTotalPages > 5;
+    const adminMargin = order.pricing?.platformMargin !== undefined ? order.pricing.platformMargin : (isOver5Pages ? 1 : 0);
     const totalAmount = order.pricing?.total || 0;
-    const shopReceivable = Math.max(0, totalAmount - adminMargin);
+    const shopReceivable = order.pricing?.shopReceivable !== undefined ? order.pricing.shopReceivable : Math.max(0, totalAmount - adminMargin);
 
     const targetShop = shopMap[sId];
     targetShop.totalOrders += 1;
     targetShop.totalRevenue += totalAmount;
     targetShop.totalDocs += orderTotalDocs;
-    targetShop.docsOver5Pages += orderDocsOver5;
+    if (isOver5Pages) targetShop.docsOver5Pages += 1;
     targetShop.adminMarginReceivable += adminMargin;
     targetShop.shopNetRevenue += shopReceivable;
 
@@ -756,7 +757,8 @@ exports.getShopSettlementReport = asyncHandler(async (req, res) => {
       customerName: order.user?.name || 'Customer',
       customerPhone: order.user?.phone || '',
       totalDocs: orderTotalDocs,
-      docsOver5Pages: orderDocsOver5,
+      totalOrderPages,
+      docsOver5Pages: isOver5Pages ? 1 : 0,
       totalAmount,
       adminMargin,
       shopReceivable,

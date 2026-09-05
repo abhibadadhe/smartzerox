@@ -703,8 +703,9 @@ const UserDashboard = () => {
   };
 
   // Calculate frontend cost estimate across all documents
-      const estimatedCost = () => {
+  const estimatedCost = () => {
     let cost = 0;
+    let totalOverallPages = 0;
     documents.forEach((doc) => {
       if (doc.simpleMode === 'customize') {
         // Real-time calculation for Customize Pages mode
@@ -713,6 +714,7 @@ const UserDashboard = () => {
           const colorCount = colorResult.pages.length;
           if (colorCount > 0) {
             const colorCopies = doc.colorCopies === '' || doc.colorCopies === undefined ? 1 : Math.max(1, Number(doc.colorCopies) || 1);
+            totalOverallPages += colorCount * colorCopies;
             const isDouble = doc.colorSides === 'double';
             const colorSheets = isDouble ? Math.ceil(colorCount / 2) : colorCount;
             const sideKey = isDouble ? 'doubleSided' : 'singleSided';
@@ -726,6 +728,7 @@ const UserDashboard = () => {
           const bwCount = bwResult.pages.length;
           if (bwCount > 0) {
             const bwCopies = doc.bwCopies === '' || doc.bwCopies === undefined ? 1 : Math.max(1, Number(doc.bwCopies) || 1);
+            totalOverallPages += bwCount * bwCopies;
             const isDouble = doc.bwSides === 'double';
             const bwSheets = isDouble ? Math.ceil(bwCount / 2) : bwCount;
             const sideKey = isDouble ? 'doubleSided' : 'singleSided';
@@ -754,6 +757,7 @@ const UserDashboard = () => {
           const isDouble = cfg.sides === 'double';
           const effectiveSheets = isDouble ? Math.ceil(physicalSidesNeeded / 2) : physicalSidesNeeded;
           const copies = Number(cfg.copies) || 1;
+          totalOverallPages += pagesInRange * copies;
 
           const colorMode = cfg.colorMode === 'color' ? 'color' : 'bw';
           const sideKey = isDouble ? 'doubleSided' : 'singleSided';
@@ -771,7 +775,11 @@ const UserDashboard = () => {
       if (doc.blackbook) cost += 50;
     });
 
-    // Customer pays exact base total (no extra fees added on top)
+    // Rule: If overall order page count > 5, add ₹1 extra admin platform fee
+    if (totalOverallPages > 5) {
+      cost += 1;
+    }
+
     return cost.toFixed(2);
   };
 

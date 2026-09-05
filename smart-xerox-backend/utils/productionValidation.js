@@ -227,10 +227,10 @@ function validateOrderPricing(order, shop) {
   }
 
   // Validate relationships
-  const expectedTotal = subtotal + additionalServicesCharge;
+  const expectedTotal = subtotal + additionalServicesCharge + (platformMargin || 0);
   if (Math.abs(total - expectedTotal) > 0.01) {
     warnings.push(
-      `Total (${total}) doesn't match subtotal (${subtotal}) + services (${additionalServicesCharge}). ` +
+      `Total (${total}) doesn't match subtotal (${subtotal}) + services (${additionalServicesCharge}) + platformMargin (${platformMargin || 0}). ` +
       `Expected: ${expectedTotal}`
     );
   }
