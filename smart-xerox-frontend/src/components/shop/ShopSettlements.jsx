@@ -30,7 +30,7 @@ const ShopSettlements = ({ orders = [], shopData }) => {
     e.preventDefault();
     const amount = Number(withdrawAmount);
     if (!amount || amount < 1) return toast.error('Please enter a valid amount (Min: ₹1)');
-    
+
     setSubmitting(true);
     try {
       await shopAPI.requestWithdrawal({ amount, paymentMethod });
@@ -49,11 +49,11 @@ const ShopSettlements = ({ orders = [], shopData }) => {
   // Compute real data from orders
   const pickedUpOrders = orders.filter(o => o.status === 'picked_up').sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
   const totalEarnings = shopData?.totalRevenue || 0;
-  
+
   const appliedCommissionRate = Number(
-    shopData?.effectiveCommissionRate ?? 
-    shopData?.platformMargin ?? 
-    shopData?.globalCommissionRate ?? 
+    shopData?.effectiveCommissionRate ??
+    shopData?.platformMargin ??
+    shopData?.globalCommissionRate ??
     0
   );
 
@@ -66,7 +66,7 @@ const ShopSettlements = ({ orders = [], shopData }) => {
     const rate = Number(o.pricing?.commissionPercent || appliedCommissionRate || 0);
     return sum + (rate > 0 ? Math.round((subtotal * rate) / 100 * 100) / 100 : 0);
   }, 0);
-  
+
   // Real available balance from backend
   const availableBalance = shopData?.availableBalance || 0;
 
@@ -85,7 +85,7 @@ const ShopSettlements = ({ orders = [], shopData }) => {
           </div>
           <h3 className="text-4xl font-bold mb-1">₹{availableBalance.toFixed(2)}</h3>
           <p className="text-sm text-gray-400">Next payout scheduled for tomorrow</p>
-          <button 
+          <button
             onClick={() => setWithdrawModal(true)}
             disabled={availableBalance < 1}
             className="mt-6 w-full py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
@@ -106,11 +106,11 @@ const ShopSettlements = ({ orders = [], shopData }) => {
         <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm flex flex-col justify-center">
           <div className="flex items-center gap-3 text-gray-500 mb-2">
             <ArrowDownRight size={20} className="text-orange-500" />
-            <span className="font-medium">Commission Due to Admin</span>
+            <span className="font-medium">Platform Fee</span>
           </div>
           <h3 className="text-3xl font-bold text-gray-800">₹{totalCommissionDue.toFixed(2)}</h3>
           <p className="text-xs text-muted-foreground mt-2">
-            To be paid manually to Admin at month-end ({appliedCommissionRate}% rate applied by Admin)
+            ({appliedCommissionRate}% rate applied by Admin)
           </p>
         </div>
       </div>
@@ -119,7 +119,7 @@ const ShopSettlements = ({ orders = [], shopData }) => {
         <div className="p-6 border-b border-gray-100 flex justify-between items-center">
           <h3 className="font-bold text-gray-800 text-lg">Withdrawal History</h3>
         </div>
-        
+
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
@@ -152,11 +152,10 @@ const ShopSettlements = ({ orders = [], shopData }) => {
                     </td>
                     <td className="p-4 text-sm font-bold text-gray-800">₹{w.amount.toFixed(2)}</td>
                     <td className="p-4">
-                      <span className={`px-2.5 py-1 text-xs font-medium rounded-full ${
-                        w.status === 'completed' ? 'bg-green-100 text-green-700' :
+                      <span className={`px-2.5 py-1 text-xs font-medium rounded-full ${w.status === 'completed' ? 'bg-green-100 text-green-700' :
                         w.status === 'rejected' ? 'bg-red-100 text-red-700' :
-                        'bg-yellow-100 text-yellow-700'
-                      }`}>
+                          'bg-yellow-100 text-yellow-700'
+                        }`}>
                         {w.status.charAt(0).toUpperCase() + w.status.slice(1)}
                       </span>
                     </td>
@@ -177,7 +176,7 @@ const ShopSettlements = ({ orders = [], shopData }) => {
                 <X size={24} />
               </button>
             </div>
-            
+
             <form onSubmit={handleWithdraw} className="p-6">
               <div className="mb-6 bg-orange-50 p-4 rounded-xl border border-orange-100 flex justify-between items-center">
                 <span className="text-orange-800 font-medium">Available Balance</span>
@@ -212,7 +211,7 @@ const ShopSettlements = ({ orders = [], shopData }) => {
                       <span className={`font-medium ${paymentMethod === 'bank_transfer' ? 'text-orange-700' : 'text-gray-600'}`}>Bank Transfer</span>
                     </label>
                   </div>
-                  
+
                   {/* Warning if no payout details */}
                   {paymentMethod === 'upi' && !shopData?.upiId && (
                     <p className="text-red-500 text-xs mt-2 flex items-center gap-1">
