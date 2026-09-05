@@ -450,6 +450,7 @@ const AdminDashboard = () => {
 
   const tabs = [
     { id: 'overview',   label: '📊 Overview'   },
+    { id: 'settlement', label: '📑 Monthly Closure & Settlement' },
     { id: 'analytics',  label: '📈 Analytics'  },
     { id: 'revenue',    label: '💰 Revenue'    },
     { id: 'users',      label: '👥 Users'      },
