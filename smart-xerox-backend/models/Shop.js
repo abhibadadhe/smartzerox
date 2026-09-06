@@ -137,39 +137,10 @@ shopSchema.methods.getEffectivePrice = function (type, side) {
 
 /**
  * Helper method to check if the shop is currently open:
- * 1. Checks `this.isOpen` (the manual toggle switch).
- * 2. Checks `this.operatingHours` for current day and current time.
- * Returns false if manual toggle is OFF or if outside operating hours.
+ * Respects `this.isOpen` (the shopkeeper toggle switch).
  */
 shopSchema.methods.isCurrentlyOpen = function () {
-  // If manual toggle is turned off, shop is closed
-  if (!this.isOpen) return false;
-
-  // Check operating hours if configured
-  if (!this.operatingHours) return true;
-
-  const now = new Date();
-  const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
-  const dayName = days[now.getDay()];
-  const todayHours = this.operatingHours[dayName];
-
-  if (!todayHours) return true;
-  if (todayHours.closed) return false;
-
-  if (todayHours.open && todayHours.close) {
-    const [openH, openM] = todayHours.open.split(':').map(Number);
-    const [closeH, closeM] = todayHours.close.split(':').map(Number);
-
-    const currentMinutes = now.getHours() * 60 + now.getMinutes();
-    const openMinutes = openH * 60 + openM;
-    const closeMinutes = closeH * 60 + closeM;
-
-    if (currentMinutes < openMinutes || currentMinutes >= closeMinutes) {
-      return false; // Outside operating hours
-    }
-  }
-
-  return true;
+  return Boolean(this.isOpen);
 };
 
 /**

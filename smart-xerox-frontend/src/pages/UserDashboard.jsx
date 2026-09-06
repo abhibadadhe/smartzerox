@@ -27,8 +27,8 @@ const statusColors = {
 
 const statusLabels = {
   pending_payment: 'Awaiting Payment',
-  paid:            'Paid — In Queue',
-  queued:          'Queued (Shop Closed)',
+  paid:            'Paid',
+  queued:          'In Queue',
   accepted:        'Accepted',
   printing:        'Printing...',
   ready:           '✅ Ready for Pickup!',
