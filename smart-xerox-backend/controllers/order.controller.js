@@ -321,18 +321,28 @@ exports.createOrder = asyncHandler(async (req, res) => {
   let razorpayOrder;
   try {
     // ── Razorpay Route Split Payment ──────────────────────────────────────────
-    // If shopkeeper has a Linked Account (acc_xxx) and split payment is enabled:
+    // If shopkeeper has a Linked Account (acc_xxxxxxxxxxxx - exactly 18 chars) and split payment is enabled:
     // Route shopReceivable directly to shopkeeper's linked account.
     // The remaining amount (₹1 platform fee) stays in Admin's Razorpay account.
     const transfers = [];
-    if (shop.razorpayAccountId && shop.splitPaymentEnabled !== false && shopReceivable > 0) {
+    const accountId = shop.razorpayAccountId ? String(shop.razorpayAccountId).trim() : '';
+    const isValidRouteAccount = Boolean(
+      shop.splitPaymentEnabled !== false &&
+      accountId &&
+      accountId.length === 18 &&
+      /^acc_[a-zA-Z0-9]{14}$/.test(accountId)
+    );
+
+    if (isValidRouteAccount && shopReceivable > 0) {
       transfers.push({
-        account: shop.razorpayAccountId,
+        account: accountId,
         amount: Math.round(shopReceivable * 100), // in paise (e.g. ₹10.00 -> 1000 paise)
         currency: 'INR',
         on_hold: 0, // 0 = transfer immediately to shopkeeper linked account upon capture
       });
-      logger.info(`Razorpay Route Split: transferring ₹${shopReceivable} to shop ${shop.razorpayAccountId}, admin retains ₹${pageFee || 0}`);
+      logger.info(`Razorpay Route Split: transferring ₹${shopReceivable} to shop ${accountId}, admin retains ₹${pageFee || 0}`);
+    } else if (shop.splitPaymentEnabled && accountId && !isValidRouteAccount) {
+      logger.warn(`[Razorpay Route] Shop ${shop._id} (${shop.name}) has invalid/non-standard razorpayAccountId: "${accountId}". Skipping Route transfer and creating standard direct order.`);
     }
 
     razorpayOrder = await withRazorpay(() => createRazorpayOrder({
@@ -340,7 +350,7 @@ exports.createOrder = asyncHandler(async (req, res) => {
       currency: 'INR',
       receipt,
       notes: { shopId, userId: req.user.id, pageFee: String(pageFee || 0) },
-      transfers,
+      transfers: transfers.length > 0 ? transfers : undefined,
     }));
   } catch (err) {
     logger.error(`Razorpay order creation failed: ${err.message}`);

@@ -1223,7 +1223,7 @@ const AdminDashboard = () => {
                         </div>
                         <div>
                           <Label className="text-xs font-semibold">Razorpay Account ID (Optional)</Label>
-                          <Input placeholder="e.g. acc_Hk82b7xZ91" value={shopFormData.razorpayAccountId} onChange={e => setShopFormData({...shopFormData, razorpayAccountId: e.target.value})} className="mt-1" />
+                          <Input placeholder="e.g. acc_12345678901234 (18 chars)" value={shopFormData.razorpayAccountId} onChange={e => setShopFormData({...shopFormData, razorpayAccountId: e.target.value})} className="mt-1" />
                         </div>
                       </div>
 

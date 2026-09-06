@@ -162,11 +162,18 @@ exports.setShopMargin = asyncHandler(async (req, res) => {
 
 // ─── Update Shop Razorpay Route Account (Direct Split Payment) ────────────────
 exports.updateShopRazorpayAccount = asyncHandler(async (req, res) => {
-  const { razorpayAccountId, splitPaymentEnabled } = req.body;
+  const { razorpayAccountId, splitPaymentEnabled, commissionPercentage } = req.body;
 
   const updates = {};
-  if (razorpayAccountId !== undefined) updates.razorpayAccountId = razorpayAccountId ? razorpayAccountId.trim() : null;
+  if (razorpayAccountId !== undefined) {
+    const acc = razorpayAccountId ? razorpayAccountId.trim() : null;
+    if (acc && (!/^acc_[a-zA-Z0-9]{14}$/.test(acc) || acc.length !== 18)) {
+      throw new AppError('Invalid Razorpay Linked Account ID. Must be exactly 18 characters starting with "acc_" (e.g. acc_Hk82b7xZ91ab12)', 400);
+    }
+    updates.razorpayAccountId = acc;
+  }
   if (splitPaymentEnabled !== undefined) updates.splitPaymentEnabled = Boolean(splitPaymentEnabled);
+  if (commissionPercentage !== undefined) updates.commissionPercentage = Math.max(0, Math.min(100, Number(commissionPercentage) || 0));
 
   const shop = await Shop.findByIdAndUpdate(req.params.id, updates, { new: true });
   if (!shop) throw new AppError('Shop not found', 404);
@@ -594,6 +601,15 @@ exports.createShopWithCredentials = asyncHandler(async (req, res) => {
     throw new AppError('Shop name, owner name, email, phone, and password are required', 400);
   }
 
+  let cleanAccountId = null;
+  if (razorpayAccountId) {
+    const acc = razorpayAccountId.trim();
+    if (acc && (!/^acc_[a-zA-Z0-9]{14}$/.test(acc) || acc.length !== 18)) {
+      throw new AppError('Invalid Razorpay Linked Account ID. Must be exactly 18 characters starting with "acc_" (e.g. acc_Hk82b7xZ91ab12)', 400);
+    }
+    cleanAccountId = acc;
+  }
+
   // Check or create User
   let user = await User.findOne({ email: email.toLowerCase() });
   if (user) {
@@ -649,8 +665,8 @@ exports.createShopWithCredentials = asyncHandler(async (req, res) => {
         doubleSided: Number(colorDoubleSided) || 15
       }
     },
-    razorpayAccountId: razorpayAccountId ? razorpayAccountId.trim() : null,
-    splitPaymentEnabled: Boolean(razorpayAccountId),
+    razorpayAccountId: cleanAccountId,
+    splitPaymentEnabled: Boolean(cleanAccountId),
     isApproved: true,
     isVerified: true,
     isActive: true,

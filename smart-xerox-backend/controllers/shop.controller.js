@@ -121,6 +121,14 @@ exports.updateShop = asyncHandler(async (req, res) => {
   const updates = {};
   allowedUpdates.forEach((key) => { if (req.body[key] !== undefined) updates[key] = req.body[key]; });
 
+  if (updates.razorpayAccountId !== undefined) {
+    const acc = updates.razorpayAccountId ? updates.razorpayAccountId.trim() : null;
+    if (acc && (!/^acc_[a-zA-Z0-9]{14}$/.test(acc) || acc.length !== 18)) {
+      throw new AppError('Invalid Razorpay Linked Account ID. Must be exactly 18 characters starting with "acc_" (e.g. acc_Hk82b7xZ91ab12)', 400);
+    }
+    updates.razorpayAccountId = acc;
+  }
+
   Object.assign(shop, updates);
   await shop.save();
   evictShopCache(req.user.id); // invalidate socket cache so next connection gets fresh shop data
