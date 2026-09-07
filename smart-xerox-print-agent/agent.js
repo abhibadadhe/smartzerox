@@ -44,7 +44,7 @@ axios.interceptors.response.use(
   }
 );
 
-// ─── PERIODIC FLEET HEARTBEAT (Keeps all 6 printers online & active) ─────────
+// ─── PERIODIC FLEET HEARTBEAT (Keeps all fleet printers online & active) ─────────
 setInterval(async () => {
   if (!token || !config.printers || config.printers.length === 0) return;
   try {
@@ -644,6 +644,58 @@ function printViaIpp(pdfBuffer, printerConfig, filename, duplex = true, copies =
   });
 }
 
+/**
+ * Ghostscript binary auto-detection and PDF -> PostScript converter
+ */
+function findGhostscript() {
+  const candidates = process.platform === 'win32'
+    ? ['gswin64c.exe', 'gswin64c', 'gswin32c.exe', 'gswin32c', 'gs']
+    : ['gs'];
+  for (const bin of candidates) {
+    try {
+      require('child_process').execFileSync(bin, ['--version'], { stdio: 'pipe', timeout: 3000 });
+      return bin;
+    } catch {}
+  }
+  return null;
+}
+
+function convertPdfToPostScript(pdfBuffer) {
+  const gsBin = findGhostscript();
+  if (!gsBin) return null;
+
+  const tempDir = path.join(__dirname, 'temp_print');
+  if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
+  const id = `gs_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const inputPdf = path.join(tempDir, `${id}_in.pdf`);
+  const outputPs = path.join(tempDir, `${id}_out.ps`);
+
+  try {
+    fs.writeFileSync(inputPdf, pdfBuffer);
+    const args = [
+      '-q',
+      '-dNOPAUSE',
+      '-dBATCH',
+      '-sDEVICE=ps2write',
+      '-dCompatibilityLevel=1.4',
+      `-sOutputFile=${outputPs}`,
+      inputPdf
+    ];
+    require('child_process').execFileSync(gsBin, args, { stdio: 'pipe', timeout: 30000 });
+    if (fs.existsSync(outputPs)) {
+      const psBytes = fs.readFileSync(outputPs);
+      try { fs.unlinkSync(inputPdf); } catch (e) {}
+      try { fs.unlinkSync(outputPs); } catch (e) {}
+      return psBytes;
+    }
+  } catch (err) {
+    console.warn(`⚠️ Ghostscript PDF->PS conversion failed: ${err.message}`);
+    try { if (fs.existsSync(inputPdf)) fs.unlinkSync(inputPdf); } catch (e) {}
+    try { if (fs.existsSync(outputPs)) fs.unlinkSync(outputPs); } catch (e) {}
+  }
+  return null;
+}
+
 function printViaPjlRawSocket(pdfBuffer, printerConfig, filename, duplex = true, orientation = undefined) {
   return new Promise((resolve, reject) => {
     const port = printerConfig.port || 9100;
@@ -652,16 +704,27 @@ function printViaPjlRawSocket(pdfBuffer, printerConfig, filename, duplex = true,
 
     const orientPjl = orientation ? `@PJL SET ORIENTATION = ${orientation.toUpperCase()}\r\n` : '';
 
-    // Standard PJL wrapper for Canon / HP Direct PDF interpretation
+    // Check if Ghostscript is available to convert PDF -> PostScript (necessary for Canon iR5000/6000)
+    let payloadData = pdfBuffer;
+    let language = 'PDF';
+    const psData = convertPdfToPostScript(pdfBuffer);
+    if (psData) {
+      console.log(`📑 [Ghostscript] Converted PDF to PostScript (${psData.length} bytes) for Canon/PS compatibility!`);
+      payloadData = psData;
+      language = 'POSTSCRIPT';
+    } else {
+      console.warn(`⚠️ [Raw Stream] Sending direct PDF stream. (If printer outputs blank pages or code, add printer to Windows Devices or install Ghostscript).`);
+    }
+
     const pjlHeader = Buffer.from(
       '\x1b%-12345X@PJL\r\n' +
       `@PJL JOB NAME = "${filename || 'SmartXerox_DirectOrder'}"\r\n` +
       (duplex ? '@PJL SET DUPLEX = ON\r\n@PJL SET BINDING = LONGEDGE\r\n' : '@PJL SET DUPLEX = OFF\r\n') +
       orientPjl +
-      '@PJL ENTER LANGUAGE = PDF\r\n'
+      `@PJL ENTER LANGUAGE = ${language}\r\n`
     );
     const pjlFooter = Buffer.from('\r\n\x1b%-12345X@PJL EOJ\r\n\x1b%-12345X');
-    const fullPayload = Buffer.concat([pjlHeader, pdfBuffer, pjlFooter]);
+    const fullPayload = Buffer.concat([pjlHeader, payloadData, pjlFooter]);
 
     client.connect(port, printerConfig.ipAddress, () => {
       console.log(`⚡ Connected to printer socket ${printerConfig.ipAddress}:${port} -> Writing ${fullPayload.length} bytes...`);
