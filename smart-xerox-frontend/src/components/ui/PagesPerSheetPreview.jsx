@@ -1,3 +1,4 @@
+import React, { useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { FileText } from 'lucide-react';
 
@@ -5,36 +6,23 @@ import { FileText } from 'lucide-react';
  * Visual preview component showing how pages will be arranged on a sheet
  * when using N-up printing (multiple pages per sheet)
  */
-const PagesPerSheetPreview = ({ pagesPerSheet = 1, orientation = 'portrait', isImage = false, imageOptions = null }) => {
-  // Image/Photo layout preview branch
-  if (isImage && imageOptions) {
-    const printType = imageOptions.printType || 'full_page';
-    const paperType = imageOptions.paperType || 'plain';
-    const drawCutLines = imageOptions.drawCutLines ?? true;
-
-    let previewTitle = 'Full Page Photo';
-    let previewDesc = 'Single photo scaled to fit paper';
-    let cellsCount = 1;
-    let gridCols = 1;
-    let gridRows = 1;
-
-    if (printType === 'passport_grid') {
-      previewTitle = 'Passport Size Grid';
-      previewDesc = '9 photos (3.5 × 4.5 cm each) arranged in 3×3 grid';
-      cellsCount = 9;
-      gridCols = 3;
-      gridRows = 3;
-    } else if (printType === 'stamp_grid') {
-      previewTitle = 'Stamp Size Grid';
-      previewDesc = '40 photos (1.5 × 2.0 cm each) arranged in 5×8 grid';
-      cellsCount = 40;
-      gridCols = 5;
-      gridRows = 8;
-    } else if (printType === 'custom_size') {
-      previewTitle = `Custom Size (${imageOptions.customWidthCm} × ${imageOptions.customHeightCm} cm)`;
-      previewDesc = 'One custom-sized photo centered on sheet';
+const PagesPerSheetPreview = ({ pagesPerSheet = 1, orientation = 'portrait', isImage = false, imageOptions = null, file = null, colorMode = 'bw' }) => {
+  const imageUrl = useMemo(() => {
+    if (!file) return null;
+    if (typeof file === 'string') return file;
+    if (file instanceof File || file instanceof Blob) {
+      try {
+        return URL.createObjectURL(file);
+      } catch {
+        return null;
+      }
     }
+    return null;
+  }, [file]);
 
+  // Image preview branch
+  if (isImage) {
+    const isColor = colorMode === 'color';
     const containerAspect = 'aspect-[1/1.414]'; // A4 Ratio
 
     return (
@@ -46,70 +34,37 @@ const PagesPerSheetPreview = ({ pagesPerSheet = 1, orientation = 'portrait', isI
       >
         {/* Header */}
         <div className="text-center">
-          <h4 className="text-sm font-semibold text-gray-900 dark:text-gray-100">{previewTitle}</h4>
-          <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{previewDesc}</p>
+          <h4 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Image Print Preview</h4>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+            {isColor ? '🎨 Color Print' : '🖤 Black & White (Xerox)'} · Standard A4
+          </p>
         </div>
 
         {/* Preview Sheet */}
-        <div className={`relative bg-white dark:bg-gray-800 rounded-lg shadow-lg border-2 ${paperType === 'glossy' ? 'border-amber-400 ring-2 ring-amber-400/20' : 'border-gray-200 dark:border-gray-700'} p-4`}>
-          {paperType === 'glossy' && (
-            <div className="absolute top-2 left-2 bg-gradient-to-r from-amber-500 to-orange-500 text-white text-[9px] font-bold rounded px-1.5 py-0.5 shadow-sm uppercase tracking-wider z-10">
-              Glossy Paper
-            </div>
-          )}
-          
+        <div className="relative bg-white dark:bg-gray-800 rounded-lg shadow-lg border-2 border-gray-200 dark:border-gray-700 p-4">
           <div className={`w-full ${containerAspect} mx-auto bg-gray-50 dark:bg-gray-900 border border-dashed border-gray-300 dark:border-gray-700 rounded p-2 flex items-center justify-center overflow-hidden`}>
-            {printType === 'full_page' ? (
+            {imageUrl ? (
+              <img
+                src={imageUrl}
+                alt="Image Preview"
+                className="max-w-full max-h-full object-contain rounded transition-all duration-200"
+                style={{
+                  filter: isColor ? 'none' : 'grayscale(100%) contrast(115%)'
+                }}
+              />
+            ) : (
               <motion.div
                 initial={{ opacity: 0, scale: 0.8 }}
                 animate={{ opacity: 1, scale: 1 }}
-                className={`w-full h-full bg-gradient-to-br from-amber-100 to-orange-100 dark:from-amber-900/20 dark:to-orange-900/20 rounded flex flex-col items-center justify-center ${drawCutLines ? 'border border-dashed border-gray-400' : 'border border-gray-200'}`}
+                className={`w-full h-full bg-gradient-to-br from-amber-100 to-orange-100 dark:from-amber-900/20 dark:to-orange-900/20 rounded flex flex-col items-center justify-center border border-gray-200 ${!isColor ? 'grayscale' : ''}`}
               >
                 <div className="text-center p-4">
-                  <span className="text-[28px]">🖼️</span>
-                  <p className="text-[10px] font-bold text-orange-600 dark:text-orange-400 mt-1">Full Photo Area</p>
+                  <span className="text-[32px]">🖼️</span>
+                  <p className="text-[11px] font-bold text-orange-600 dark:text-orange-400 mt-1">
+                    {isColor ? 'Color Image' : 'B&W Xerox Image'}
+                  </p>
                 </div>
               </motion.div>
-            ) : printType === 'custom_size' ? (
-              (() => {
-                const wPct = Math.min(100, Math.max(10, (imageOptions.customWidthCm / 21) * 100));
-                const hPct = Math.min(100, Math.max(10, (imageOptions.customHeightCm / 29.7) * 100));
-                return (
-                  <motion.div
-                    initial={{ opacity: 0, scale: 0.8 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    style={{ width: `${wPct}%`, height: `${hPct}%` }}
-                    className={`bg-gradient-to-br from-amber-100 to-orange-100 dark:from-amber-900/20 dark:to-orange-900/20 flex flex-col items-center justify-center shadow-md ${drawCutLines ? 'border border-dashed border-gray-400' : 'border border-gray-200'}`}
-                  >
-                    <div className="text-center p-1 overflow-hidden">
-                      <span className="text-[18px]">🖼️</span>
-                      <p className="text-[9px] font-semibold text-orange-600 dark:text-orange-400 truncate">
-                        {imageOptions.customWidthCm}×{imageOptions.customHeightCm} cm
-                      </p>
-                    </div>
-                  </motion.div>
-                );
-              })()
-            ) : (
-              <div
-                className="grid gap-0.5 h-full w-full bg-white dark:bg-gray-900"
-                style={{
-                  gridTemplateColumns: `repeat(${gridCols}, 1fr)`,
-                  gridTemplateRows: `repeat(${gridRows}, 1fr)`,
-                }}
-              >
-                {Array.from({ length: cellsCount }).map((_, i) => (
-                  <motion.div
-                    key={i}
-                    initial={{ opacity: 0, scale: 0.8 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    transition={{ delay: Math.min(i * 0.02, 0.3) }}
-                    className={`bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-900/10 dark:to-orange-900/10 flex flex-col items-center justify-center ${drawCutLines ? 'border border-dashed border-gray-400' : 'border border-gray-200'}`}
-                  >
-                    <span className="text-[9px] opacity-75">👤</span>
-                  </motion.div>
-                ))}
-              </div>
             )}
           </div>
 
@@ -123,17 +78,16 @@ const PagesPerSheetPreview = ({ pagesPerSheet = 1, orientation = 'portrait', isI
 
         {/* Info badges */}
         <div className="flex items-center justify-center gap-2 flex-wrap">
-          <div className="bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 px-2 py-1 rounded-full text-[10px] font-medium border border-orange-200 dark:border-orange-700">
-            ✓ Smart Auto-Tiling
+          <div className={`px-2.5 py-1 rounded-full text-[10px] font-semibold border ${
+            isColor
+              ? 'bg-pink-100 dark:bg-pink-950/40 text-pink-700 dark:text-pink-300 border-pink-300'
+              : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-300'
+          }`}>
+            {isColor ? '🎨 Color Print' : '🖤 Xerox (B&W)'}
           </div>
-          <div className="bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 px-2 py-1 rounded-full text-[10px] font-medium border border-amber-200 dark:border-amber-700">
-            Paper: {paperType === 'glossy' ? 'Glossy Photo' : 'Plain'}
+          <div className="bg-orange-100 dark:bg-orange-950/40 text-orange-700 dark:text-orange-300 px-2.5 py-1 rounded-full text-[10px] font-semibold border border-orange-200">
+            📄 1 Page per Sheet
           </div>
-          {drawCutLines && (
-            <div className="bg-gray-100 dark:bg-gray-900/30 text-gray-700 dark:text-gray-400 px-2 py-1 rounded-full text-[10px] font-medium border border-gray-200 dark:border-gray-700">
-              With Cut Lines
-            </div>
-          )}
         </div>
       </motion.div>
     );

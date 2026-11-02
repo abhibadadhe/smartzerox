@@ -296,11 +296,11 @@ const UserDashboard = () => {
         isImage: isImage,
         imageOptions: isImage ? {
           isImageFile: true,
-          printType: doc.imageOptions?.printType || 'full_page',
-          customWidthCm: doc.imageOptions?.customWidthCm || 10,
-          customHeightCm: doc.imageOptions?.customHeightCm || 7.5,
-          paperType: doc.imageOptions?.paperType || 'plain',
-          drawCutLines: doc.imageOptions?.drawCutLines ?? true,
+          printType: 'full_page',
+          customWidthCm: 21,
+          customHeightCm: 29.7,
+          paperType: 'plain',
+          drawCutLines: false,
         } : null,
         presentationOptions: isPPT ? {
           isPresentationFile: true,
@@ -1430,105 +1430,137 @@ const UserDashboard = () => {
                               </div>
                             )}
 
-                            {doc.isImage && doc.imageOptions && (
-                              <div className="rounded-xl border border-orange-200 bg-orange-50/50 p-4 space-y-3">
-                                <h4 className="font-semibold text-orange-800 text-sm flex items-center gap-2">
-                                  🖼️ Image & Photo Layout Settings
-                                </h4>
-                                <div className="grid grid-cols-2 gap-3">
+                            {doc.isImage && (
+                              <div className="space-y-4 bg-white dark:bg-card rounded-xl p-4 border-2 border-orange-200">
+                                <div className="flex items-center justify-between">
+                                  <h4 className="font-semibold text-sm text-orange-800 flex items-center gap-2">
+                                    🖼️ Image Print Settings
+                                  </h4>
+                                  <span className="text-xs bg-orange-100 text-orange-800 px-2.5 py-0.5 rounded-full font-medium">
+                                    1 Image File
+                                  </span>
+                                </div>
+
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                  {/* Format: Color / Xerox */}
                                   <div>
-                                    <Label className="text-xs">Print Size Preset</Label>
-                                    <select 
-                                      value={doc.imageOptions.printType || 'full_page'}
+                                    <Label className="text-xs font-semibold text-gray-700 mb-1.5 block">
+                                      Format (Color / Xerox)
+                                    </Label>
+                                    <div className="grid grid-cols-2 gap-2">
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          const copies = doc.simpleCopies || 1;
+                                          updateDoc(di, {
+                                            simpleMode: 'all-color',
+                                            configs: [{
+                                              id: Date.now(),
+                                              rangeStart: 1,
+                                              rangeEnd: 1,
+                                              copies: copies,
+                                              colorMode: 'color',
+                                              sides: 'single',
+                                              pagesPerSheet: 1,
+                                            }],
+                                          });
+                                        }}
+                                        className={`px-3 py-2.5 text-xs font-semibold rounded-lg border-2 transition-all flex items-center justify-center gap-1.5 ${
+                                          doc.simpleMode === 'all-color'
+                                            ? 'border-orange-500 bg-orange-100 text-orange-900 shadow-sm'
+                                            : 'border-gray-200 bg-white text-gray-700 hover:border-orange-300'
+                                        }`}
+                                      >
+                                        🎨 Color
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          const copies = doc.simpleCopies || 1;
+                                          updateDoc(di, {
+                                            simpleMode: 'all-xerox',
+                                            configs: [{
+                                              id: Date.now(),
+                                              rangeStart: 1,
+                                              rangeEnd: 1,
+                                              copies: copies,
+                                              colorMode: 'bw',
+                                              sides: 'single',
+                                              pagesPerSheet: 1,
+                                            }],
+                                          });
+                                        }}
+                                        className={`px-3 py-2.5 text-xs font-semibold rounded-lg border-2 transition-all flex items-center justify-center gap-1.5 ${
+                                          doc.simpleMode !== 'all-color'
+                                            ? 'border-orange-500 bg-orange-100 text-orange-900 shadow-sm'
+                                            : 'border-gray-200 bg-white text-gray-700 hover:border-orange-300'
+                                        }`}
+                                      >
+                                        🖤 Xerox
+                                      </button>
+                                    </div>
+                                    <p className="text-xs text-muted-foreground mt-1">Select Color or Xerox print</p>
+                                  </div>
+
+                                  {/* Number of Copies */}
+                                  <div>
+                                    <Label className="text-xs font-semibold text-gray-700 mb-1.5 block">
+                                      Number of Copies
+                                    </Label>
+                                    <Input
+                                      type="number"
+                                      min={1}
+                                      max={100}
+                                      value={doc.simpleCopies ?? ''}
                                       onChange={(e) => {
-                                        const type = e.target.value;
-                                        let w = doc.imageOptions.customWidthCm;
-                                        let h = doc.imageOptions.customHeightCm;
-                                        if (type === 'passport_grid') {
-                                          w = 3.5;
-                                          h = 4.5;
-                                        } else if (type === 'stamp_grid') {
-                                          w = 1.5;
-                                          h = 2.0;
-                                        } else if (type === 'full_page') {
-                                          w = 21.0;
-                                          h = 29.7;
+                                        const raw = e.target.value;
+                                        if (raw === '') {
+                                          updateDoc(di, { simpleCopies: '' });
+                                          return;
                                         }
+                                        const copies = Math.min(Math.max(1, parseInt(raw) || 1), 100);
                                         updateDoc(di, {
-                                          imageOptions: {
-                                            ...doc.imageOptions,
-                                            printType: type,
-                                            customWidthCm: w,
-                                            customHeightCm: h
-                                          }
+                                          simpleCopies: copies,
+                                          configs: [{
+                                            id: Date.now(),
+                                            rangeStart: 1,
+                                            rangeEnd: 1,
+                                            copies: copies,
+                                            colorMode: doc.simpleMode === 'all-color' ? 'color' : 'bw',
+                                            sides: 'single',
+                                            pagesPerSheet: 1,
+                                          }],
                                         });
                                       }}
-                                      className="w-full mt-1 rounded-lg border-2 border-orange-200 px-3 py-2 text-sm focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none bg-white dark:bg-gray-800"
-                                    >
-                                      <option value="full_page">Full Page (1 Photo)</option>
-                                      <option value="passport_grid">Passport Size Grid (3.5 × 4.5 cm)</option>
-                                      <option value="stamp_grid">Stamp Size Grid (1.5 × 2.0 cm)</option>
-                                      <option value="custom_size">Custom Size...</option>
-                                    </select>
-                                  </div>
-                                  <div>
-                                    <Label className="text-xs">Paper Type</Label>
-                                    <select 
-                                      value={doc.imageOptions.paperType || 'plain'}
-                                      onChange={(e) => updateDoc(di, { imageOptions: { ...doc.imageOptions, paperType: e.target.value } })}
-                                      className="w-full mt-1 rounded-lg border-2 border-orange-200 px-3 py-2 text-sm focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none bg-white dark:bg-gray-800"
-                                    >
-                                      <option value="plain">Plain Paper (Normal)</option>
-                                      <option value="glossy">Glossy Photo Paper (+₹{shopInfo?.pricing?.glossyPaperPerSheet ?? 15})</option>
-                                    </select>
+                                      onBlur={() => {
+                                        if (!doc.simpleCopies || doc.simpleCopies === '') {
+                                          const copies = 1;
+                                          updateDoc(di, {
+                                            simpleCopies: copies,
+                                            configs: [{
+                                              id: Date.now(),
+                                              rangeStart: 1,
+                                              rangeEnd: 1,
+                                              copies: copies,
+                                              colorMode: doc.simpleMode === 'all-color' ? 'color' : 'bw',
+                                              sides: 'single',
+                                              pagesPerSheet: 1,
+                                            }],
+                                          });
+                                        }
+                                      }}
+                                      className="border-2 border-orange-300 focus:border-orange-500 text-sm"
+                                    />
+                                    <p className="text-xs text-muted-foreground mt-1">How many copies? (1-100)</p>
                                   </div>
                                 </div>
 
-                                {doc.imageOptions.printType === 'custom_size' && (
-                                  <div className="grid grid-cols-2 gap-3 pt-1">
-                                    <div>
-                                      <Label className="text-xs">Custom Width (cm)</Label>
-                                      <Input 
-                                        type="number" 
-                                        min={1} 
-                                        max={30} 
-                                        step={0.1}
-                                        value={doc.imageOptions.customWidthCm}
-                                        onChange={(e) => {
-                                          const w = parseFloat(e.target.value) || 0;
-                                          updateDoc(di, { imageOptions: { ...doc.imageOptions, customWidthCm: w } });
-                                        }}
-                                        className="mt-1 text-sm border-2 border-orange-200" 
-                                      />
-                                    </div>
-                                    <div>
-                                      <Label className="text-xs">Custom Height (cm)</Label>
-                                      <Input 
-                                        type="number" 
-                                        min={1} 
-                                        max={40} 
-                                        step={0.1}
-                                        value={doc.imageOptions.customHeightCm}
-                                        onChange={(e) => {
-                                          const h = parseFloat(e.target.value) || 0;
-                                          updateDoc(di, { imageOptions: { ...doc.imageOptions, customHeightCm: h } });
-                                        }}
-                                        className="mt-1 text-sm border-2 border-orange-200" 
-                                      />
-                                    </div>
-                                  </div>
-                                )}
-
-                                <div className="flex gap-4 mt-2">
-                                  <label className="flex items-center gap-2 cursor-pointer">
-                                    <input 
-                                      type="checkbox" 
-                                      checked={doc.imageOptions.drawCutLines} 
-                                      onChange={(e) => updateDoc(di, { imageOptions: { ...doc.imageOptions, drawCutLines: e.target.checked } })} 
-                                      className="h-4 w-4 rounded text-orange-600 focus:ring-orange-500" 
-                                    />
-                                    <span className="text-xs font-medium text-orange-900">Draw Border / Cut Lines</span>
-                                  </label>
+                                <div className="bg-green-50 dark:bg-green-950/20 border border-green-200 rounded-lg p-3">
+                                  <p className="text-xs font-medium text-green-800 dark:text-green-400">
+                                    ✓ {doc.simpleMode === 'all-color'
+                                      ? `1 image × ${doc.simpleCopies || 1} ${(doc.simpleCopies || 1) > 1 ? 'copies' : 'copy'} in COLOR`
+                                      : `1 image × ${doc.simpleCopies || 1} ${(doc.simpleCopies || 1) > 1 ? 'copies' : 'copy'} in XEROX (Black & White)`}
+                                  </p>
                                 </div>
                               </div>
                             )}
@@ -1649,6 +1681,8 @@ const UserDashboard = () => {
                             orientation={activeOrientation}
                             isImage={doc.isImage}
                             imageOptions={doc.imageOptions}
+                            file={doc.file || doc.fileData?.s3Url}
+                            colorMode={config?.colorMode || (doc.simpleMode === 'all-color' ? 'color' : 'bw')}
                           />
                         )}
                       </div>
