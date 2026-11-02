@@ -500,12 +500,16 @@ async function handlePrintJob(orderData) {
       }
     }
 
-    // 3. Mark order as READY for pickup on Dashboard (shows "Ready for Pickup")
-    await axios.patch(`${API_URL}/api/orders/${orderId}/status`, { status: 'ready' }, {
+    // 3. Mark order as COMPLETED on Dashboard directly without manual OTP verify
+    await axios.patch(`${API_URL}/api/orders/${orderId}/status`, { status: 'picked_up' }, {
       headers: { Authorization: `Bearer ${token}` }
-    }).catch(() => {});
+    }).catch(async () => {
+      await axios.patch(`${API_URL}/api/orders/${orderId}/auto-printed`, {}, {
+        headers: { Authorization: `Bearer ${token}` }
+      }).catch(() => {});
+    });
 
-    console.log(`\n✅ Order #${order.orderNumber || orderId} marked READY for pickup on Dashboard!\n`);
+    console.log(`\n✅ Order #${order.orderNumber || orderId} printing done — directly moved to COMPLETED!\n`);
 
   } catch (err) {
     console.error('❌ Direct Print Error:', err.message);

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Search, Filter, RefreshCw, ChevronLeft, ChevronRight, Eye, X, Ban, KeyRound, Printer } from 'lucide-react';
+import { Search, Filter, RefreshCw, ChevronLeft, ChevronRight, Eye, X, Ban, KeyRound, Printer, CheckCircle2 } from 'lucide-react';
 import { shopAPI } from '../../lib/api';
 import { getSocket } from '../../lib/socket';
 import { toast } from 'sonner';
@@ -149,10 +149,11 @@ const ShopOrders = ({ handleReject, triggerPrint, handleVerifyPickup, handleUpda
     })
     : orders;
 
-  // Stats for history tab
+  // Stats for history tab — only count completed orders pages
+  const completedOrders = displayOrders.filter(o => o.status === 'picked_up' || o.status === 'completed');
   const historyStats = {
     transactions: pagination.total || displayOrders.length,
-    pages: displayOrders.reduce((s, o) => s + (o.printJob?.totalPages || o.documents?.reduce((a, d) => {
+    pages: completedOrders.reduce((s, o) => s + (o.printJob?.totalPages || o.documents?.reduce((a, d) => {
       if (d.printingRanges && d.printingRanges.length > 0) {
         return a + d.printingRanges.reduce((rs, r) => rs + ((r.rangeEnd - r.rangeStart + 1) * (r.copies || 1)), 0);
       }
@@ -322,12 +323,24 @@ const ShopOrders = ({ handleReject, triggerPrint, handleVerifyPickup, handleUpda
                       )}
                       {order.status === 'ready' && (
                         <button
-                          onClick={() => setOtpModal({ open: true, order, otp: '' })}
-                          className="px-2.5 py-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition-all"
-                          title="Verify pickup OTP"
+                          onClick={async () => {
+                            if (handleUpdateStatus) {
+                              await handleUpdateStatus(order._id, 'picked_up');
+                            } else {
+                              try {
+                                await shopAPI.updateOrderStatus?.(order._id, 'picked_up');
+                                toast.success('Order completed ✅');
+                                fetchOrders(true);
+                              } catch (err) {
+                                toast.error(err.response?.data?.message || 'Failed to complete order');
+                              }
+                            }
+                          }}
+                          className="px-2.5 py-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition-all flex items-center gap-1 shadow-sm"
+                          title="Directly complete order"
                         >
-                          <KeyRound size={14} className="inline mr-1" />
-                          Verify OTP
+                          <CheckCircle2 size={14} className="inline mr-1" />
+                          Complete
                         </button>
                       )}
                       <div className="flex flex-col items-end gap-1.5">

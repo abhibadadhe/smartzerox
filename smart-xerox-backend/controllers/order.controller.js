@@ -18,6 +18,36 @@ const { findOptimalPrinterForShop } = require('./printer.controller');
 const { withRazorpay, withS3, withEmail } = require('../utils/circuitBreaker');
 const { dispatchOrderToPrinters } = require('../services/orderDispatch.service');
 const moment = require('moment');
+// ─── Helper: Release Printer Load & Queue Count ─────────────────────────────
+async function releasePrinterLoad(order) {
+  if (!order.assignedPrinter) return;
+  try {
+    const Printer = require('../models/Printer');
+    const totalPages = (order.documents || []).reduce((acc, d) => {
+      if (d.printingRanges && d.printingRanges.length > 0) {
+        return acc + d.printingRanges.reduce((sum, r) => sum + ((r.rangeEnd - r.rangeStart + 1) * (r.copies || 1)), 0);
+      }
+      return acc + (d.detectedPages || 1);
+    }, 0) || 1;
+
+    const p = await Printer.findById(order.assignedPrinter);
+    if (p) {
+      p.currentLoad = Math.max(0, (p.currentLoad || 0) - totalPages);
+      p.jobsInQueue = Math.max(0, (p.jobsInQueue || 0) - 1);
+      await p.save();
+
+      const { getIO } = require('../config/socket');
+      try {
+        const io = getIO();
+        const shopId = (order.shop?._id || order.shop).toString();
+        io.to(`shop:${shopId}`).emit('printer:status_update', { printers: [p] });
+      } catch (sockErr) {}
+    }
+  } catch (loadErr) {
+    logger.warn(`Failed to decrement printer load: ${loadErr.message}`);
+  }
+}
+
 
 // ─── Helper: Transition Order to READY + Generate OTP + Notify ────────────────
 // Reused by: markAutoPrinted (print agent), updateOrderStatus (manual),
@@ -187,7 +217,7 @@ exports.createOrder = asyncHandler(async (req, res) => {
     throw new AppError('Order already created. Please wait before placing another.', 409);
   }
 
-  const shop = await Shop.findById(shopId);
+  const shop = await Shop.findById(shopId).select('+razorpayKeySecret');
   if (!shop) throw new AppError('Shop not found', 404);
   if (!shop.isActive || !shop.isVerified) throw new AppError('Shop is not available', 400);
   // Note: Closed shops (manual toggle OFF or outside operating hours) allow orders to be placed & queued.
@@ -319,38 +349,41 @@ exports.createOrder = asyncHandler(async (req, res) => {
 
   const receipt = `order_${Date.now()}`;
   let razorpayOrder;
+
+  // ── Direct Shopkeeper Gateway (Multi-Merchant) ──────────────────────────
+  // If shopkeeper has their own Razorpay Key ID and Secret configured:
+  // Payment is created directly on their Razorpay account so 100% of customer funds
+  // go directly to the shopkeeper's bank account.
+  // Platform commission/fee is collected manually by Admin.
+  // If not configured, falls back to platform default Razorpay credentials.
+  const hasShopCredentials = Boolean(
+    shop.razorpayKeyId &&
+    shop.razorpayKeySecret &&
+    shop.razorpayKeyId.startsWith('rzp_')
+  );
+
+  const activeKeyId = hasShopCredentials ? shop.razorpayKeyId.trim() : process.env.RAZORPAY_KEY_ID;
+  const activeKeySecret = hasShopCredentials ? shop.razorpayKeySecret.trim() : process.env.RAZORPAY_KEY_SECRET;
+
+  if (hasShopCredentials) {
+    logger.info(`Direct Payment: using shopkeeper Razorpay gateway (${shop.name}, key: ${activeKeyId.slice(0, 10)}...)`);
+  } else {
+    logger.info(`Direct Payment: shopkeeper has no custom Razorpay keys. Using system platform gateway for ${shop.name}`);
+  }
+
   try {
-    // ── Razorpay Route Split Payment ──────────────────────────────────────────
-    // If shopkeeper has a Linked Account (acc_xxxxxxxxxxxx - exactly 18 chars) and split payment is enabled:
-    // Route shopReceivable directly to shopkeeper's linked account.
-    // The remaining amount (₹1 platform fee) stays in Admin's Razorpay account.
-    const transfers = [];
-    const accountId = shop.razorpayAccountId ? String(shop.razorpayAccountId).trim() : '';
-    const isValidRouteAccount = Boolean(
-      shop.splitPaymentEnabled !== false &&
-      accountId &&
-      accountId.length === 18 &&
-      /^acc_[a-zA-Z0-9]{14}$/.test(accountId)
-    );
-
-    if (isValidRouteAccount && shopReceivable > 0) {
-      transfers.push({
-        account: accountId,
-        amount: Math.round(shopReceivable * 100), // in paise (e.g. ₹10.00 -> 1000 paise)
-        currency: 'INR',
-        on_hold: 0, // 0 = transfer immediately to shopkeeper linked account upon capture
-      });
-      logger.info(`Razorpay Route Split: transferring ₹${shopReceivable} to shop ${accountId}, admin retains ₹${pageFee || 0}`);
-    } else if (shop.splitPaymentEnabled && accountId && !isValidRouteAccount) {
-      logger.warn(`[Razorpay Route] Shop ${shop._id} (${shop.name}) has invalid/non-standard razorpayAccountId: "${accountId}". Skipping Route transfer and creating standard direct order.`);
-    }
-
     razorpayOrder = await withRazorpay(() => createRazorpayOrder({
       amount: total,
       currency: 'INR',
       receipt,
-      notes: { shopId, userId: req.user.id, pageFee: String(pageFee || 0) },
-      transfers: transfers.length > 0 ? transfers : undefined,
+      notes: {
+        shopId: String(shopId),
+        userId: String(req.user.id),
+        pageFee: String(pageFee || 0),
+        isShopGateway: String(hasShopCredentials)
+      },
+      keyId: activeKeyId,
+      keySecret: activeKeySecret,
     }));
   } catch (err) {
     logger.error(`Razorpay order creation failed: ${err.message}`);
@@ -379,6 +412,7 @@ exports.createOrder = asyncHandler(async (req, res) => {
         subtotal,
         pageFee: pageFee || 0,
         percentCommission: percentCommission || 0,
+        adminCommission: platformMargin || 0, // Uncollected platform commission owed to Admin
         platformMargin,
         commissionPercent: commissionPercent || 0,
         additionalServicesCharge: additionalCharge,
@@ -388,6 +422,8 @@ exports.createOrder = asyncHandler(async (req, res) => {
       status: 'pending_payment',
       payment: {
         razorpayOrderId: razorpayOrder.id,
+        gatewayKeyId: activeKeyId,
+        isShopGateway: hasShopCredentials,
         status: 'pending',
       },
       statusHistory: [{ status: 'pending_payment', note: 'Order created, awaiting payment' }],
@@ -417,7 +453,7 @@ exports.createOrder = asyncHandler(async (req, res) => {
               orderId:  existing.payment?.razorpayOrderId || razorpayOrder.id,
               amount:   Math.round(existing.pricing.total * 100),
               currency: 'INR',
-              key:      process.env.RAZORPAY_KEY_ID,
+              key:      existing.payment?.gatewayKeyId || process.env.RAZORPAY_KEY_ID,
             },
           },
         });
@@ -460,7 +496,7 @@ exports.createOrder = asyncHandler(async (req, res) => {
         orderId: razorpayOrder.id,
         amount: razorpayOrder.amount,
         currency: razorpayOrder.currency,
-        key: process.env.RAZORPAY_KEY_ID,
+        key: activeKeyId,
       },
     },
   });
@@ -808,8 +844,9 @@ exports.rejectOrder = asyncHandler(async (req, res) => {
 exports.updateOrderStatus = asyncHandler(async (req, res) => {
   const { status, note } = req.body;
   const validTransitions = {
-    accepted: ['printing'],
-    printing: ['ready'],
+    accepted: ['printing', 'picked_up', 'ready'],
+    printing: ['ready', 'picked_up'],
+    ready: ['picked_up'],
   };
 
   const order = await Order.findById(req.params.id)
@@ -823,10 +860,11 @@ exports.updateOrderStatus = asyncHandler(async (req, res) => {
     throw new AppError(`Cannot transition from ${order.status} to ${status}`, 400);
   }
 
-  // ── If transitioning to READY → use the shared helper (generates OTP + notifies) ──
-  if (status === 'ready') {
-    await transitionToReady(order, req.user.id);
-    return res.status(200).json({ success: true, message: 'Order status updated to ready', data: { order } });
+  // When printing is done (status 'ready' or 'picked_up') -> direct go into complete state without manual otp verify
+  if (status === 'ready' || status === 'picked_up') {
+    await releasePrinterLoad(order);
+    await markOrderPickedUp(order, 'auto_confirm', req.user.id);
+    return res.status(200).json({ success: true, message: 'Printing completed — order moved directly to complete state', data: { order } });
   }
 
   // ── Otherwise it's accepted→printing — handle normally ──
@@ -859,6 +897,7 @@ exports.updateOrderStatus = asyncHandler(async (req, res) => {
 
 // ─── Helper: Mark order as picked up (reused by manual + automatic flows) ────
 async function markOrderPickedUp(order, verificationMethod = 'manual', verifiedBy = null) {
+  if (order.status === 'picked_up') return order;
   order.addStatusHistory('picked_up', `Order picked up by customer — ${verificationMethod} verification`, verifiedBy);
   order.pickup.verifiedAt  = new Date();
   order.pickup.verifiedBy  = verifiedBy;
@@ -915,6 +954,9 @@ exports.verifyPickup = asyncHandler(async (req, res) => {
     .populate('user', 'name email');
   if (!order) throw new AppError('Order not found', 404);
   if (order.shop.owner.toString() !== req.user.id) throw new AppError('Access denied', 403);
+  if (order.status === 'picked_up') {
+    return res.status(200).json({ success: true, message: 'Order already completed', data: { order } });
+  }
   if (order.status !== 'ready') throw new AppError('Order is not ready for pickup', 400);
 
   // Validate OTP or QR code
@@ -1125,38 +1167,29 @@ exports.markAutoPrinted = asyncHandler(async (req, res) => {
   if (!order) throw new AppError('Order not found', 404);
   if (order.shop.owner.toString() !== req.user.id) throw new AppError('Access denied', 403);
 
-  // Idempotent — if already ready or picked_up, return current state
-  if (order.status === 'ready') {
-    return res.status(200).json({
-      success: true,
-      message: 'Order already marked ready — awaiting customer pickup',
-      data: { order },
-    });
-  }
+  // Idempotent — if already complete
   if (order.status === 'picked_up') {
     return res.status(200).json({
       success: true,
-      message: 'Order already picked up',
+      message: 'Order already completed',
       data: { order },
     });
   }
 
-  // If still in accepted state, add printing to history first (for audit trail)
   if (order.status === 'accepted') {
     order.addStatusHistory('printing', 'All documents auto-printed by print agent', req.user.id);
     await order.save();
   }
 
-  // Transition printing → ready
-  // This sends the OTP email to the user and emits real-time socket events.
-  // The shopkeeper must verify the OTP when the customer arrives at the counter.
-  await transitionToReady(order, req.user.id);
+  // Direct go into complete state without manual otp verify
+  await releasePrinterLoad(order);
+  await markOrderPickedUp(order, 'auto_confirm', req.user.id);
 
-  logger.info(`Order ${order.orderNumber} → READY (printed by agent). Awaiting OTP verification at counter.`);
+  logger.info(`Order ${order.orderNumber} → COMPLETED (printed by agent). Auto-completed without manual OTP.`);
 
   res.status(200).json({
     success: true,
-    message: 'Printing complete — order is ready for pickup. Customer will show OTP at counter.',
+    message: 'Printing complete — order is completed.',
     data: { order },
   });
 });
@@ -1841,3 +1874,7 @@ exports.getOrderDivisionStatus = asyncHandler(async (req, res) => {
     data: divisionInfo,
   });
 });
+
+
+exports.markOrderPickedUp = markOrderPickedUp;
+exports.releasePrinterLoad = releasePrinterLoad;

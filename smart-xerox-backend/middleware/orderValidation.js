@@ -16,8 +16,8 @@ const VALID_TRANSITIONS = {
   'pending_payment': ['paid', 'cancelled', 'expired'],
   'paid': ['queued', 'accepted', 'cancelled'],
   'queued': ['accepted', 'rejected', 'cancelled', 'expired'],
-  'accepted': ['printing', 'rejected', 'cancelled', 'expired'],
-  'printing': ['ready', 'rejected', 'cancelled', 'expired'],
+  'accepted': ['printing', 'picked_up', 'rejected', 'cancelled', 'expired'],
+  'printing': ['ready', 'picked_up', 'rejected', 'cancelled', 'expired'],
   'ready': ['picked_up', 'expired', 'cancelled'],
   'picked_up': [], // Terminal state
   'rejected': [], // Terminal state

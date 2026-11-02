@@ -760,12 +760,21 @@ async function printViaIpp(order, printer, retryCount = 0, maxRetries = 3) {
     // Mark completed
     latestOrder.printJob.status = 'completed';
     latestOrder.printJob.lastError = undefined;
-    // If not already in a picked_up/ready state
-    if (latestOrder.status === 'accepted' || latestOrder.status === 'printing') {
-        latestOrder.status = 'ready';
+    
+    // Direct go into complete state without manual otp verify
+    try {
+      const { markOrderPickedUp, releasePrinterLoad } = require('../controllers/order.controller');
+      if (releasePrinterLoad) await releasePrinterLoad(latestOrder);
+      if (markOrderPickedUp && latestOrder.status !== 'picked_up') {
+        await markOrderPickedUp(latestOrder, 'auto_confirm', null);
+      } else {
+        await latestOrder.save();
+      }
+    } catch (completeErr) {
+      latestOrder.status = 'picked_up';
+      await latestOrder.save();
     }
-    await latestOrder.save();
-    logger.info(`✅ [IPP] Order ${latestOrder.orderNumber || latestOrder._id} completed via IPP`);
+    logger.info(`✅ [IPP] Order ${latestOrder.orderNumber || latestOrder._id} directly completed via IPP`);
 
     // Notify UI
     if (latestOrder.shop) {
