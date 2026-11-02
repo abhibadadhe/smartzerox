@@ -48,6 +48,8 @@ const ShopProfile = ({ shopData, setShopData }) => {
       pincode: shopData?.address?.pincode || '',
     },
     upiId: shopData?.upiId || '',
+    razorpayKeyId: shopData?.razorpayKeyId || '',
+    razorpayKeySecret: '',
     razorpayAccountId: shopData?.razorpayAccountId || '',
     splitPaymentEnabled: shopData?.splitPaymentEnabled !== false,
     bankDetails: {
@@ -73,6 +75,8 @@ const ShopProfile = ({ shopData, setShopData }) => {
         phone: profile.phone,
         address: profile.address,
         upiId: profile.upiId,
+        razorpayKeyId: profile.razorpayKeyId,
+        ...(profile.razorpayKeySecret ? { razorpayKeySecret: profile.razorpayKeySecret } : {}),
         razorpayAccountId: profile.razorpayAccountId,
         splitPaymentEnabled: profile.splitPaymentEnabled,
         bankDetails: profile.bankDetails,
@@ -434,53 +438,53 @@ const ShopProfile = ({ shopData, setShopData }) => {
             </div>
           </div>
 
-          {/* ── Razorpay Route Direct Split Payment ────────────────────────── */}
+          {/* ── Direct Razorpay Gateway Settings ────────────────────────── */}
           <div className="pt-4 border-t border-gray-50">
-            <div className="flex items-center justify-between mb-2">
+            <div className="mb-3">
+              <h4 className="font-medium text-gray-700 flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-green-500"></span>
+                Direct Razorpay Gateway (100% Direct Payout)
+              </h4>
+              <p className="text-xs text-gray-500 mt-0.5">
+                When configured, 100% of customer payments go directly into your own Razorpay account and bank. Admin collects platform commission separately.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <h4 className="font-medium text-gray-700 flex items-center gap-2">
-                  <span className="w-2.5 h-2.5 rounded-full bg-green-500"></span>
-                  Razorpay Route (Direct Payment Split)
-                </h4>
-                <p className="text-xs text-gray-500 mt-0.5">
-                  When enabled, printing earnings go directly to your linked account on order placement; ₹1 platform fee goes to Admin.
-                </p>
-              </div>
-              <label className="relative inline-flex items-center cursor-pointer">
+                <label className="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">
+                  Razorpay Key ID
+                </label>
                 <input
-                  type="checkbox"
-                  checked={profile.splitPaymentEnabled}
+                  type="text"
+                  placeholder="e.g. rzp_live_xxxxxxxxxxxx or rzp_test_..."
+                  value={profile.razorpayKeyId}
                   onChange={(e) =>
                     setProfile((prev) => ({
                       ...prev,
-                      splitPaymentEnabled: e.target.checked,
+                      razorpayKeyId: e.target.value,
                     }))
                   }
-                  className="sr-only peer"
+                  className="w-full border-gray-300 rounded-lg shadow-sm focus:ring-orange-500 focus:border-orange-500 p-2 border font-mono text-sm"
                 />
-                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-600"></div>
-              </label>
-            </div>
-
-            <div className="mt-3">
-              <label className="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">
-                Razorpay Linked Account ID (e.g. acc_xxxxxxxxxxxx)
-              </label>
-              <input
-                type="text"
-                placeholder="e.g. acc_Lz89abc1234567"
-                value={profile.razorpayAccountId}
-                onChange={(e) =>
-                  setProfile((prev) => ({
-                    ...prev,
-                    razorpayAccountId: e.target.value,
-                  }))
-                }
-                className="w-full md:w-1/2 border-gray-300 rounded-lg shadow-sm focus:ring-orange-500 focus:border-orange-500 p-2 border font-mono text-sm"
-              />
-              <p className="text-xs text-gray-400 mt-1">
-                Generated from Razorpay Dashboard → Route → Linked Accounts.
-              </p>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">
+                  Razorpay Key Secret (leave blank to keep unchanged)
+                </label>
+                <input
+                  type="password"
+                  placeholder="Enter secret to update"
+                  value={profile.razorpayKeySecret}
+                  onChange={(e) =>
+                    setProfile((prev) => ({
+                      ...prev,
+                      razorpayKeySecret: e.target.value,
+                    }))
+                  }
+                  className="w-full border-gray-300 rounded-lg shadow-sm focus:ring-orange-500 focus:border-orange-500 p-2 border font-mono text-sm"
+                />
+              </div>
             </div>
           </div>
         </div>

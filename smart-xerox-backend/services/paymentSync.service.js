@@ -6,6 +6,7 @@
 
 const Order = require('../models/Order');
 const Payment = require('../models/Payment');
+const Shop = require('../models/Shop');
 const { AppError } = require('../utils/helpers');
 const { emitToUser, emitToShop, emitToAdmin } = require('../config/socket');
 const { createNotification } = require('../utils/notifications');
@@ -111,6 +112,22 @@ async function finalizePaymentCapture({
       ...paymentMeta,
     }
   );
+
+  // ── Update Shop: total revenue, order count, and uncollected commission owed to Admin ──
+  const adminCommission = Number(updatedOrder.pricing?.adminCommission ?? updatedOrder.pricing?.platformMargin ?? 0);
+  const orderTotal = Number(updatedOrder.pricing?.total || 0);
+  const shopId = updatedOrder.shop?._id || updatedOrder.shop;
+
+  if (shopId) {
+    await Shop.findByIdAndUpdate(shopId, {
+      $inc: {
+        commissionDue: adminCommission,
+        totalRevenue: orderTotal,
+        totalOrders: 1,
+      },
+    }).catch(err => logger.error(`Failed to update shop commission/revenue on payment: ${err.message}`));
+    logger.info(`Updated shop ${shopId}: +₹${orderTotal} revenue, +₹${adminCommission} commission due to Admin`);
+  }
 
   await createNotification({
     recipient: updatedOrder.user,

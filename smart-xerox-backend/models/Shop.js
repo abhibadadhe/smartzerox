@@ -88,10 +88,25 @@ const shopSchema = new mongoose.Schema(
       bankName: String,
     },
     upiId: { type: String, select: false },
-    // Razorpay Route Split Payment Settings
-    razorpayAccountId: { type: String, trim: true, default: null }, // e.g. 'acc_Hk82b7xZ91'
+    // Direct Shopkeeper Razorpay Gateway Settings
+    razorpayKeyId: { type: String, trim: true, default: null }, // Shop's own Razorpay Key ID (e.g. rzp_live_... or rzp_test_...)
+    razorpayKeySecret: { type: String, trim: true, default: null, select: false }, // Shop's Key Secret (hidden by default)
+    razorpayAccountId: { type: String, trim: true, default: null }, // Legacy Route account ID
     commissionPercentage: { type: Number, default: 5.0, min: 0, max: 100 }, // Platform margin %
     splitPaymentEnabled: { type: Boolean, default: false },
+    // Manual Commission Tracking (Admin collects manually from Shopkeeper)
+    commissionDue: { type: Number, default: 0, min: 0 }, // Uncollected platform commission owed to Admin
+    commissionPaid: { type: Number, default: 0, min: 0 }, // Total commission settled to Admin
+    commissionHistory: [
+      {
+        amount: { type: Number, required: true },
+        date: { type: Date, default: Date.now },
+        paymentMethod: { type: String, enum: ['upi', 'cash', 'bank_transfer'], default: 'upi' },
+        referenceId: { type: String, default: null },
+        notes: { type: String, default: null },
+        collectedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+      },
+    ],
     notifications: {
       newOrder: { type: Boolean, default: true },
       orderExpiry: { type: Boolean, default: true },

@@ -168,6 +168,8 @@ const AdminDashboard = () => {
     state: 'Maharashtra',
     pincode: '411001',
     razorpayAccountId: '',
+    razorpayKeyId: '',
+    razorpayKeySecret: '',
     bwSingleSided: 2,
     bwDoubleSided: 3,
     colorSingleSided: 10,
@@ -175,6 +177,14 @@ const AdminDashboard = () => {
   });
   const [creatingShop, setCreatingShop] = useState(false); // { id, name }
   const [rejectReason, setRejectReason] = useState('');
+
+  // Collect Commission Modal State
+  const [collectModal, setCollectModal] = useState(null);
+  const [collectAmount, setCollectAmount] = useState('');
+  const [collectMethod, setCollectMethod] = useState('upi');
+  const [collectRefId, setCollectRefId] = useState('');
+  const [collectNotes, setCollectNotes] = useState('');
+  const [collectingCommission, setCollectingCommission] = useState(false);
 
   // Revenue tab
   const [revenueGroup, setRevenueGroup] = useState('day');
@@ -352,6 +362,39 @@ const AdminDashboard = () => {
     }
   };
 
+  const handleCollectCommission = async (e) => {
+    e.preventDefault();
+    if (!collectModal) return;
+    const amount = Number(collectAmount);
+    if (!amount || amount <= 0) {
+      toast.error('Please enter a valid amount to collect');
+      return;
+    }
+
+    setCollectingCommission(true);
+    try {
+      const shopId = collectModal._id || collectModal.shopId;
+      await adminAPI.collectCommission(shopId, {
+        amount,
+        paymentMethod: collectMethod,
+        referenceId: collectRefId,
+        notes: collectNotes,
+      });
+      toast.success(`Successfully collected ₹${amount} commission! ✅`);
+      setCollectModal(null);
+      setCollectAmount('');
+      setCollectRefId('');
+      setCollectNotes('');
+      fetchDashboard();
+      fetchShops();
+      fetchSettlementReport();
+    } catch (err) {
+      toast.error(err.response?.data?.message || err.message || 'Failed to collect commission');
+    } finally {
+      setCollectingCommission(false);
+    }
+  };
+
   const handleRejectShop = async () => {
     if (!rejectReason.trim()) { toast.error('Please enter a reason'); return; }
     try {
@@ -493,14 +536,15 @@ const AdminDashboard = () => {
               ))}
             </div>
 
-            <div className="grid gap-4 sm:grid-cols-3">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               {[
-                { label: 'Active Orders',        value: stats.activeOrders        || 0 },
-                { label: "Today's Orders",       value: stats.todayOrders         || 0 },
-                { label: 'Pending Verification', value: stats.pendingVerification || 0 },
+                { label: 'Active Orders',        value: stats.activeOrders        || 0, color: 'text-primary' },
+                { label: "Today's Orders",       value: stats.todayOrders         || 0, color: 'text-blue-600' },
+                { label: 'Total Platform GMV',   value: `₹${(stats.totalGMV || 0).toLocaleString('en-IN')}`, color: 'text-purple-600' },
+                { label: 'Commission Due (Shops)', value: `₹${(stats.totalCommissionDue || 0).toLocaleString('en-IN')}`, color: 'text-red-600' },
               ].map((s) => (
                 <div key={s.label} className="glass-card p-4 text-center">
-                  <p className="text-2xl font-heading font-bold text-primary">{s.value}</p>
+                  <p className={`text-2xl font-heading font-bold ${s.color || 'text-primary'}`}>{s.value}</p>
                   <p className="text-xs text-muted-foreground mt-1">{s.label}</p>
                 </div>
               ))}
@@ -728,14 +772,28 @@ const AdminDashboard = () => {
                           ₹{(s.adminCommissionDue || 0).toLocaleString('en-IN')}
                         </td>
                         <td className="px-4 py-3.5 text-center">
-                          <Button 
-                            size="sm" 
-                            variant="outline" 
-                            onClick={() => setDrilldownShop(s)}
-                            className="text-xs h-7 px-2.5 gap-1 hover:bg-orange-50 hover:text-orange-700 hover:border-orange-300"
-                          >
-                            🔍 {s.orders.length} Orders <ChevronRight className="h-3 w-3" />
-                          </Button>
+                          <div className="flex items-center justify-center gap-1.5">
+                            <Button 
+                              size="sm" 
+                              variant="outline" 
+                              onClick={() => setDrilldownShop(s)}
+                              className="text-xs h-7 px-2 gap-1 hover:bg-orange-50 hover:text-orange-700 hover:border-orange-300"
+                            >
+                              🔍 {s.orders.length} Orders
+                            </Button>
+                            <Button
+                              size="sm"
+                              onClick={() => {
+                                setCollectModal({ _id: s.shopId, name: s.shopName, commissionDue: s.adminCommissionDue, commissionPaid: s.commissionPaid });
+                                setCollectAmount(String(s.adminCommissionDue || ''));
+                                setCollectRefId('');
+                                setCollectNotes('');
+                              }}
+                              className="text-xs h-7 px-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-medium shadow-sm"
+                            >
+                              💰 Collect
+                            </Button>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -787,7 +845,7 @@ const AdminDashboard = () => {
                             </td>
                             <td className="p-2.5 text-center font-medium">{o.totalOrderPages || o.totalDocs}</td>
                             <td className="p-2.5 text-right font-semibold">₹{o.totalAmount}</td>
-                            <td className="p-2.5 text-right font-medium text-indigo-600 dark:text-indigo-400">₹{o.pageFee || (o.totalOrderPages > 5 ? 1 : 0)}</td>
+                            <td className="p-2.5 text-right font-medium text-indigo-600 dark:text-indigo-400">₹{o.pageFee ?? (o.totalOrderPages > 5 ? 1 : 0)}</td>
                             <td className="p-2.5 text-right font-medium text-orange-600">₹{o.percentCommission || 0}</td>
                             <td className="p-2.5 text-right font-bold text-green-600">₹{o.shopReceivable}</td>
                             <td className="p-2.5 text-center">
@@ -1162,8 +1220,34 @@ const AdminDashboard = () => {
                     <p className="text-xs text-muted-foreground mt-0.5">
                       B&W: ₹{s.pricing?.bw?.singleSided || 0}/page · Color: ₹{s.pricing?.color?.singleSided || 0}/page · Margin: {s.platformMargin || 0}%
                     </p>
+                    <div className="flex flex-wrap items-center gap-3 mt-2 pt-2 border-t border-border/50 text-xs">
+                      <span className="bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 font-medium px-2 py-0.5 rounded">
+                        Total Volume: ₹{(s.totalRevenue || 0).toLocaleString('en-IN')}
+                      </span>
+                      <span className={s.razorpayKeyId ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 font-medium px-2 py-0.5 rounded' : 'bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 font-medium px-2 py-0.5 rounded'}>
+                        {s.razorpayKeyId ? `✅ Direct Gateway (${s.razorpayKeyId.slice(0, 8)}...)` : '⚡ System Gateway Fallback'}
+                      </span>
+                      <span className="bg-red-100 dark:bg-red-950/60 text-red-700 dark:text-red-300 font-bold px-2 py-0.5 rounded">
+                        Commission Due: ₹{(s.commissionDue || 0).toLocaleString('en-IN')}
+                      </span>
+                      <span className="bg-green-100 dark:bg-green-950/60 text-green-700 dark:text-green-300 font-medium px-2 py-0.5 rounded">
+                        Settled: ₹{(s.commissionPaid || 0).toLocaleString('en-IN')}
+                      </span>
+                    </div>
                   </div>
-                  <div className="flex gap-2 shrink-0">
+                  <div className="flex flex-col sm:flex-row gap-2 shrink-0">
+                    <Button 
+                      size="sm" 
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white font-medium shadow-sm"
+                      onClick={() => {
+                        setCollectModal(s);
+                        setCollectAmount(String(s.commissionDue || ''));
+                        setCollectRefId('');
+                        setCollectNotes('');
+                      }}
+                    >
+                      💰 Collect Commission
+                    </Button>
                     {!s.isVerified && (
                       <>
                         <Button size="sm" className="sunrise-gradient text-primary-foreground" onClick={() => handleApproveShop(s._id)}>
@@ -1222,8 +1306,12 @@ const AdminDashboard = () => {
                           <Input required placeholder="e.g. 9876543210" value={shopFormData.phone} onChange={e => setShopFormData({...shopFormData, phone: e.target.value})} className="mt-1" />
                         </div>
                         <div>
-                          <Label className="text-xs font-semibold">Razorpay Account ID (Optional)</Label>
-                          <Input placeholder="e.g. acc_12345678901234 (18 chars)" value={shopFormData.razorpayAccountId} onChange={e => setShopFormData({...shopFormData, razorpayAccountId: e.target.value})} className="mt-1" />
+                          <Label className="text-xs font-semibold">Shopkeeper Razorpay Key ID (Optional)</Label>
+                          <Input placeholder="e.g. rzp_live_xxxxxxxxxxxx or rzp_test_..." value={shopFormData.razorpayKeyId} onChange={e => setShopFormData({...shopFormData, razorpayKeyId: e.target.value})} className="mt-1 font-mono text-xs" />
+                        </div>
+                        <div>
+                          <Label className="text-xs font-semibold">Shopkeeper Razorpay Key Secret (Optional)</Label>
+                          <Input type="password" placeholder="e.g. Razorpay secret" value={shopFormData.razorpayKeySecret} onChange={e => setShopFormData({...shopFormData, razorpayKeySecret: e.target.value})} className="mt-1 font-mono text-xs" />
                         </div>
                       </div>
 
@@ -1311,6 +1399,94 @@ const AdminDashboard = () => {
                     <Button className="flex-1 bg-destructive text-destructive-foreground" onClick={handleRejectShop}>Confirm Reject</Button>
                     <Button variant="outline" onClick={() => setRejectModal(null)}>Cancel</Button>
                   </div>
+                </motion.div>
+              </div>
+            )}
+
+            {/* ── RECORD COMMISSION COLLECTION MODAL ── */}
+            {collectModal && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={() => setCollectModal(null)}>
+                <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
+                  className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 max-w-md w-full shadow-2xl"
+                  onClick={e => e.stopPropagation()}>
+                  <div className="flex items-center justify-between border-b pb-3 mb-4">
+                    <div>
+                      <h3 className="font-heading font-bold text-lg text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                        💰 Record Commission Payment
+                      </h3>
+                      <p className="text-xs text-muted-foreground">{collectModal.name || collectModal.shopName}</p>
+                    </div>
+                    <button type="button" onClick={() => setCollectModal(null)}><X className="h-5 w-5 text-slate-400" /></button>
+                  </div>
+
+                  <form onSubmit={handleCollectCommission} className="space-y-4">
+                    <div className="bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-xl p-3 flex justify-between items-center">
+                      <div>
+                        <p className="text-xs text-amber-800 dark:text-amber-300 font-medium">Outstanding Due</p>
+                        <p className="text-xl font-bold text-amber-900 dark:text-amber-100">₹{Number(collectModal.commissionDue || 0).toFixed(2)}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-xs text-muted-foreground font-medium">Already Paid</p>
+                        <p className="text-sm font-semibold text-emerald-600">₹{Number(collectModal.commissionPaid || 0).toFixed(2)}</p>
+                      </div>
+                    </div>
+
+                    <div>
+                      <Label className="text-xs font-semibold">Amount Collected (₹) *</Label>
+                      <Input 
+                        required 
+                        type="number" 
+                        step="0.5" 
+                        min="1" 
+                        placeholder="e.g. 100" 
+                        value={collectAmount} 
+                        onChange={e => setCollectAmount(e.target.value)} 
+                        className="mt-1" 
+                      />
+                    </div>
+
+                    <div>
+                      <Label className="text-xs font-semibold">Payment Method *</Label>
+                      <select 
+                        value={collectMethod} 
+                        onChange={e => setCollectMethod(e.target.value)}
+                        className="w-full mt-1 border border-input rounded-md px-3 py-2 text-sm bg-background"
+                      >
+                        <option value="upi">UPI (PhonePe / GPay / Paytm)</option>
+                        <option value="cash">Cash in Hand</option>
+                        <option value="bank_transfer">Bank Transfer (NEFT/IMPS)</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <Label className="text-xs font-semibold">Transaction Reference / UTR (Optional)</Label>
+                      <Input 
+                        placeholder="e.g. UPI Ref ID or receipt #" 
+                        value={collectRefId} 
+                        onChange={e => setCollectRefId(e.target.value)} 
+                        className="mt-1" 
+                      />
+                    </div>
+
+                    <div>
+                      <Label className="text-xs font-semibold">Notes (Optional)</Label>
+                      <Input 
+                        placeholder="e.g. Received via UPI at month-end" 
+                        value={collectNotes} 
+                        onChange={e => setCollectNotes(e.target.value)} 
+                        className="mt-1" 
+                      />
+                    </div>
+
+                    <div className="flex gap-2 pt-2 border-t">
+                      <Button type="button" variant="outline" onClick={() => setCollectModal(null)} className="flex-1">
+                        Cancel
+                      </Button>
+                      <Button type="submit" disabled={collectingCommission} className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold">
+                        {collectingCommission ? 'Recording...' : '✓ Mark Paid / Record'}
+                      </Button>
+                    </div>
+                  </form>
                 </motion.div>
               </div>
             )}

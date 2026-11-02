@@ -117,9 +117,20 @@ exports.updateShop = asyncHandler(async (req, res) => {
   const shop = await findMyShop(req.user.id);
   if (!shop) throw new AppError('Shop not found', 404);
 
-  const allowedUpdates = ['name', 'phone', 'email', 'address', 'location', 'pricing', 'services', 'operatingHours', 'bankDetails', 'upiId', 'isOpen', 'verificationTimeoutMs', 'otpPlacement', 'razorpayAccountId', 'splitPaymentEnabled'];
+  const allowedUpdates = [
+    'name', 'phone', 'email', 'address', 'location', 'pricing', 'services',
+    'operatingHours', 'bankDetails', 'upiId', 'isOpen', 'verificationTimeoutMs',
+    'otpPlacement', 'razorpayKeyId', 'razorpayKeySecret', 'razorpayAccountId', 'splitPaymentEnabled'
+  ];
   const updates = {};
   allowedUpdates.forEach((key) => { if (req.body[key] !== undefined) updates[key] = req.body[key]; });
+
+  if (updates.razorpayKeyId !== undefined) {
+    updates.razorpayKeyId = updates.razorpayKeyId ? updates.razorpayKeyId.trim() : null;
+  }
+  if (updates.razorpayKeySecret !== undefined) {
+    updates.razorpayKeySecret = updates.razorpayKeySecret ? updates.razorpayKeySecret.trim() : null;
+  }
 
   if (updates.razorpayAccountId !== undefined) {
     const acc = updates.razorpayAccountId ? updates.razorpayAccountId.trim() : null;

@@ -18,6 +18,7 @@ exports.getDashboard = asyncHandler(async (req, res) => {
   const [
     totalUsers, totalShops, totalOrders, activeOrders,
     todayOrders, monthRevenue, pendingVerification,
+    commissionSummary, gmvSummary,
     recentOrders
   ] = await Promise.all([
     User.countDocuments({ role: 'user' }),
@@ -30,6 +31,14 @@ exports.getDashboard = asyncHandler(async (req, res) => {
       { $group: { _id: null, total: { $sum: '$platformRevenue' } } },
     ]),
     Shop.countDocuments({ isVerified: false, isActive: true }),
+    Shop.aggregate([
+      { $match: { isActive: true } },
+      { $group: { _id: null, totalDue: { $sum: '$commissionDue' }, totalPaid: { $sum: '$commissionPaid' } } }
+    ]),
+    Payment.aggregate([
+      { $match: { status: 'paid' } },
+      { $group: { _id: null, totalGMV: { $sum: '$amount' }, totalPlatformRevenue: { $sum: '$platformRevenue' } } }
+    ]),
     Order.find().sort({ createdAt: -1 }).limit(10)
       .populate('user', 'name email')
       .populate('shop', 'name')
@@ -47,6 +56,9 @@ exports.getDashboard = asyncHandler(async (req, res) => {
         todayOrders,
         monthPlatformRevenue: monthRevenue[0]?.total || 0,
         pendingVerification,
+        totalCommissionDue: Math.round((commissionSummary[0]?.totalDue || 0) * 100) / 100,
+        totalCommissionCollected: Math.round((commissionSummary[0]?.totalPaid || 0) * 100) / 100,
+        totalGMV: Math.round((gmvSummary[0]?.totalGMV || 0) * 100) / 100,
       },
       recentOrders,
     },
@@ -160,11 +172,13 @@ exports.setShopMargin = asyncHandler(async (req, res) => {
   res.status(200).json({ success: true, message: `Platform margin set to ${numMargin}%`, data: { shop } });
 });
 
-// ─── Update Shop Razorpay Route Account (Direct Split Payment) ────────────────
+// ─── Update Shop Payment Settings (Direct Gateway & Split Payment) ─────────
 exports.updateShopRazorpayAccount = asyncHandler(async (req, res) => {
-  const { razorpayAccountId, splitPaymentEnabled, commissionPercentage } = req.body;
+  const { razorpayKeyId, razorpayKeySecret, razorpayAccountId, splitPaymentEnabled, commissionPercentage } = req.body;
 
   const updates = {};
+  if (razorpayKeyId !== undefined) updates.razorpayKeyId = razorpayKeyId ? razorpayKeyId.trim() : null;
+  if (razorpayKeySecret !== undefined) updates.razorpayKeySecret = razorpayKeySecret ? razorpayKeySecret.trim() : null;
   if (razorpayAccountId !== undefined) {
     const acc = razorpayAccountId ? razorpayAccountId.trim() : null;
     if (acc && (!/^acc_[a-zA-Z0-9]{14}$/.test(acc) || acc.length !== 18)) {
@@ -178,8 +192,51 @@ exports.updateShopRazorpayAccount = asyncHandler(async (req, res) => {
   const shop = await Shop.findByIdAndUpdate(req.params.id, updates, { new: true });
   if (!shop) throw new AppError('Shop not found', 404);
 
-  logger.info(`Admin updated Razorpay Route account for shop ${shop.name} (${shop._id}): accountId=${shop.razorpayAccountId}, splitEnabled=${shop.splitPaymentEnabled}`);
-  res.status(200).json({ success: true, message: 'Shop Razorpay Route settings updated', data: { shop } });
+  logger.info(`Admin updated payment credentials for shop ${shop.name} (${shop._id})`);
+  res.status(200).json({ success: true, message: 'Shop payment settings updated', data: { shop } });
+});
+
+// ─── Collect Commission Manually from Shop ──────────────────────────────────
+exports.collectShopCommission = asyncHandler(async (req, res) => {
+  const { amount, paymentMethod = 'upi', referenceId, notes } = req.body;
+  const numAmount = Number(amount);
+  if (isNaN(numAmount) || numAmount <= 0) {
+    throw new AppError('Please provide a valid collection amount greater than 0', 400);
+  }
+
+  const shop = await Shop.findById(req.params.id);
+  if (!shop) throw new AppError('Shop not found', 404);
+
+  const currentDue = Number(shop.commissionDue || 0);
+  const newDue = Math.max(0, currentDue - numAmount);
+  const newPaid = Number(shop.commissionPaid || 0) + numAmount;
+
+  shop.commissionDue = newDue;
+  shop.commissionPaid = newPaid;
+  if (!shop.commissionHistory) shop.commissionHistory = [];
+  shop.commissionHistory.push({
+    amount: numAmount,
+    date: new Date(),
+    paymentMethod,
+    referenceId: referenceId || `MANUAL_${Date.now()}`,
+    notes: notes || 'Manual commission collection by Admin',
+    collectedBy: req.user.id,
+  });
+
+  await shop.save();
+
+  logger.info(`Admin collected ₹${numAmount} commission for shop "${shop.name}". Remaining due: ₹${newDue}`);
+
+  res.status(200).json({
+    success: true,
+    message: `Collected ₹${numAmount} commission successfully for ${shop.name}`,
+    data: {
+      shopId: shop._id,
+      commissionDue: shop.commissionDue,
+      commissionPaid: shop.commissionPaid,
+      commissionHistory: shop.commissionHistory,
+    },
+  });
 });
 
 // ─── Get All Orders ───────────────────────────────────────────────────────────
@@ -548,34 +605,6 @@ exports.getAllWithdrawals = asyncHandler(async (req, res) => {
   });
 });
 
-// @desc    Update Shop Razorpay Linked Account & Split Payment Settings
-// @route   PUT /api/admin/shops/:id/razorpay-account
-// @access  Private (Admin)
-exports.updateShopRazorpayAccount = asyncHandler(async (req, res) => {
-  const { razorpayAccountId, commissionPercentage, splitPaymentEnabled } = req.body;
-
-  const updateData = {};
-  if (razorpayAccountId !== undefined) updateData.razorpayAccountId = razorpayAccountId ? razorpayAccountId.trim() : null;
-  if (commissionPercentage !== undefined) updateData.commissionPercentage = Math.max(0, Math.min(100, Number(commissionPercentage) || 0));
-  if (splitPaymentEnabled !== undefined) updateData.splitPaymentEnabled = Boolean(splitPaymentEnabled);
-
-  const shop = await Shop.findByIdAndUpdate(req.params.id, updateData, { new: true, runValidators: true });
-  if (!shop) throw new AppError('Shop not found', 404);
-
-  logger.info(`Admin updated Razorpay Route settings for shop ${shop.name} (${shop._id}): account=${shop.razorpayAccountId}, commission=${shop.commissionPercentage}%, split=${shop.splitPaymentEnabled}`);
-
-  res.status(200).json({
-    success: true,
-    message: `Updated Razorpay Route settings for ${shop.name}`,
-    data: {
-      shopId: shop._id,
-      razorpayAccountId: shop.razorpayAccountId,
-      commissionPercentage: shop.commissionPercentage,
-      splitPaymentEnabled: shop.splitPaymentEnabled
-    }
-  });
-});
-
 // @desc    Admin create new shop & shopkeeper account for direct handover
 // @route   POST /api/admin/shops/create-with-credentials
 // @access  Private (Admin)
@@ -590,6 +619,8 @@ exports.createShopWithCredentials = asyncHandler(async (req, res) => {
     city,
     state,
     pincode,
+    razorpayKeyId,
+    razorpayKeySecret,
     razorpayAccountId,
     bwSingleSided,
     bwDoubleSided,
@@ -601,6 +632,8 @@ exports.createShopWithCredentials = asyncHandler(async (req, res) => {
     throw new AppError('Shop name, owner name, email, phone, and password are required', 400);
   }
 
+  const cleanKeyId = razorpayKeyId ? razorpayKeyId.trim() : null;
+  const cleanKeySecret = razorpayKeySecret ? razorpayKeySecret.trim() : null;
   let cleanAccountId = null;
   if (razorpayAccountId) {
     const acc = razorpayAccountId.trim();
@@ -665,6 +698,8 @@ exports.createShopWithCredentials = asyncHandler(async (req, res) => {
         doubleSided: Number(colorDoubleSided) || 15
       }
     },
+    razorpayKeyId: cleanKeyId,
+    razorpayKeySecret: cleanKeySecret,
     razorpayAccountId: cleanAccountId,
     splitPaymentEnabled: Boolean(cleanAccountId),
     isApproved: true,
@@ -726,7 +761,11 @@ exports.getShopSettlementReport = asyncHandler(async (req, res) => {
     }
 
     const match = {
-      status: { $in: ['paid', 'accepted', 'printing', 'ready', 'picked_up'] }
+      status: { $in: ['picked_up', 'completed'] },
+      $or: [
+        { parentOrder: { $exists: false } },
+        { parentOrder: null }
+      ]
     };
 
     if (shopId && shopId !== 'all' && mongoose.Types.ObjectId.isValid(shopId)) {
@@ -771,6 +810,10 @@ exports.getShopSettlementReport = asyncHandler(async (req, res) => {
         ownerName: ownerUser?.name || 'Shopkeeper',
         ownerPhone: ownerUser?.phone || s.phone || '',
         ownerEmail: ownerUser?.email || s.email || '',
+        commissionDue: s.commissionDue || 0,
+        commissionPaid: s.commissionPaid || 0,
+        razorpayKeyId: s.razorpayKeyId || null,
+        isShopGateway: Boolean(s.razorpayKeyId),
         totalOrders: 0,
         totalRevenue: 0,
         totalDocs: 0,
@@ -797,6 +840,10 @@ exports.getShopSettlementReport = asyncHandler(async (req, res) => {
           ownerName: 'Shopkeeper',
           ownerPhone: '',
           ownerEmail: '',
+          commissionDue: 0,
+          commissionPaid: 0,
+          razorpayKeyId: null,
+          isShopGateway: false,
           totalOrders: 0,
           totalRevenue: 0,
           totalDocs: 0,
@@ -817,14 +864,28 @@ exports.getShopSettlementReport = asyncHandler(async (req, res) => {
       docs.forEach(doc => {
         if (!doc) return;
         const ranges = Array.isArray(doc.printingRanges) ? doc.printingRanges : [];
-        const docPages = ranges.reduce((sum, r) => sum + (((r.rangeEnd || 1) - (r.rangeStart || 1) + 1) * (r.copies || 1)), 0) || (doc.pageCount || doc.detectedPages || 1);
+        let docPages = 0;
+        if (ranges.length > 0) {
+          docPages = ranges.reduce((sum, r) => {
+            const start = Number(r.rangeStart) || 1;
+            const end = Number(r.rangeEnd) || start;
+            const copies = Number(r.copies) || 1;
+            const pagesInRange = Math.max(1, end - start + 1);
+            return sum + (pagesInRange * copies);
+          }, 0);
+        } else {
+          const pages = Number(doc.detectedPages || doc.pageCount || 1);
+          const copies = Number(doc.copies || 1);
+          docPages = pages * copies;
+        }
         orderTotalPages += docPages;
       });
 
       if (orderTotalPages === 0) {
-        orderTotalPages = order.totalPages || 1;
+        orderTotalPages = Number(order.printJob?.totalPages) || Number(order.totalPages) || 1;
       }
 
+      const isShopGatewayOrder = Boolean(order.payment?.isShopGateway);
       const isOver5Pages = orderTotalPages > 5;
       const totalAmount = Number(order.pricing?.total || order.totalAmount || 0);
       const pageFee = order.pricing?.pageFee !== undefined 
@@ -835,13 +896,12 @@ exports.getShopSettlementReport = asyncHandler(async (req, res) => {
         ? Number(order.pricing.percentCommission)
         : (order.pricing?.commissionPercent ? Math.round((Number(order.pricing.subtotal || 0) * Number(order.pricing.commissionPercent)) / 100 * 100) / 100 : 0);
 
-      const adminDirectFee = pageFee; // ₹1 paid by student, already in Admin's account directly via online payment
-      const adminCommissionDue = percentCommission; // % commission owed manually by shopkeeper to Admin at month-end
-      const adminMargin = adminDirectFee + adminCommissionDue;
+      const adminMargin = Number(order.pricing?.adminCommission ?? order.pricing?.platformMargin ?? (pageFee + percentCommission));
+      // In direct gateway, 100% is deposited into shopkeeper bank, so all platform fees are uncollected commission owed manually to Admin
+      const adminCommissionDue = isShopGatewayOrder ? adminMargin : percentCommission;
+      const adminDirectFee = isShopGatewayOrder ? 0 : pageFee;
 
-      const shopReceivable = order.pricing?.shopReceivable !== undefined 
-        ? Number(order.pricing.shopReceivable) 
-        : Math.max(0, totalAmount - adminDirectFee);
+      const shopReceivable = isShopGatewayOrder ? totalAmount : Math.max(0, totalAmount - adminDirectFee);
 
       const targetShop = shopMap[sId];
       targetShop.totalOrders += 1;

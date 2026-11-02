@@ -1,7 +1,8 @@
 const Order = require('../models/Order');
 const Payment = require('../models/Payment');
+const Shop = require('../models/Shop');
 const { AppError, asyncHandler } = require('../utils/helpers');
-const { verifyWebhookSignature, verifyPaymentSignature, razorpay } = require('../config/razorpay');
+const { verifyWebhookSignature, verifyPaymentSignature, razorpay, getRazorpayInstance } = require('../config/razorpay');
 const { emitToUser, emitToShop, emitToAdmin } = require('../config/socket');
 const { createNotification } = require('../utils/notifications');
 const { withRazorpay, withEmail } = require('../utils/circuitBreaker');
@@ -21,6 +22,17 @@ if (!amount || typeof amount !== 'number' || amount <= 0) {
 throw new AppError('Invalid payment amount', 400);
 }
 
+const order = await Order.findOne({ 'payment.razorpayOrderId': razorpayOrderId }).populate({
+  path: 'shop',
+  select: '+razorpayKeySecret',
+});
+if (!order) throw new AppError('Order not found', 404);
+
+// IDOR check — ensure the payment belongs to the requesting user
+if (order.user.toString() !== req.user.id) {
+throw new AppError('Access denied', 403);
+}
+
 // Verify signature (mock orders allowed in development only)
 if (razorpayOrderId.startsWith('mock_order_')) {
 if (process.env.NODE_ENV === 'production') {
@@ -28,19 +40,20 @@ throw new AppError('Invalid payment order', 400);
 }
 logger.info(`Bypassing payment signature verification for mock order: ${razorpayOrderId}`);
 } else {
-const isValid = verifyPaymentSignature({ orderId: razorpayOrderId, paymentId: razorpayPaymentId, signature: razorpaySignature });
+const shopSecret = (order.payment?.isShopGateway && order.shop?.razorpayKeySecret)
+  ? order.shop.razorpayKeySecret
+  : process.env.RAZORPAY_KEY_SECRET;
+
+const isValid = verifyPaymentSignature({
+  orderId: razorpayOrderId,
+  paymentId: razorpayPaymentId,
+  signature: razorpaySignature,
+  keySecret: shopSecret,
+});
 if (!isValid) {
 logger.warn(`Invalid payment signature for order: ${razorpayOrderId}`);
 throw new AppError('Payment verification failed. Invalid signature.', 400);
 }
-}
-
-const order = await Order.findOne({ 'payment.razorpayOrderId': razorpayOrderId }).populate('shop');
-if (!order) throw new AppError('Order not found', 404);
-
-// IDOR check — ensure the payment belongs to the requesting user
-if (order.user.toString() !== req.user.id) {
-throw new AppError('Access denied', 403);
 }
 
 // ── CRITICAL FIX #2: Validate amount matches order total (prevent price manipulation) ──
@@ -280,10 +293,31 @@ throw new AppError('Refund already processed for this order', 400);
 }
 
 // Razorpay refund
-const refund = await withRazorpay(() => razorpay.payments.refund(payment.razorpayPaymentId, {
+let rzpClient = razorpay;
+if (order.payment?.isShopGateway && order.shop) {
+  const shopObj = await Shop.findById(order.shop._id || order.shop).select('+razorpayKeySecret');
+  if (shopObj?.razorpayKeyId && shopObj?.razorpayKeySecret) {
+    rzpClient = getRazorpayInstance({ keyId: shopObj.razorpayKeyId, keySecret: shopObj.razorpayKeySecret });
+  }
+}
+
+const refund = await withRazorpay(() => rzpClient.payments.refund(payment.razorpayPaymentId, {
 amount: Math.round(order.pricing.total * 100),
 notes: { reason, orderId: orderId.toString() },
 }));
+
+// Revert commissionDue and totalRevenue for the shop
+const adminCommission = Number(order.pricing?.adminCommission ?? order.pricing?.platformMargin ?? 0);
+const orderTotal = Number(order.pricing?.total || 0);
+const shopIdToRevert = order.shop?._id || order.shop;
+if (shopIdToRevert) {
+  await Shop.findByIdAndUpdate(shopIdToRevert, {
+    $inc: {
+      commissionDue: -adminCommission,
+      totalRevenue: -orderTotal,
+    }
+  }).catch(err => logger.error(`Failed to revert shop commission on refund: ${err.message}`));
+}
 
 // ── CRITICAL FIX: Use atomic update to prevent duplicate refunds ──────────────
 const updatedOrder = await Order.findByIdAndUpdate(

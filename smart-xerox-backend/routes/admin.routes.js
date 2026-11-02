@@ -23,6 +23,7 @@ router.post('/shops/create-with-credentials', adminController.createShopWithCred
 router.patch('/shops/:id/verify', adminController.verifyShop);
 router.patch('/shops/:id/margin', adminController.setShopMargin);
 router.put('/shops/:id/razorpay-account', adminController.updateShopRazorpayAccount);
+router.post('/shops/:id/collect-commission', adminController.collectShopCommission);
 
 // Withdrawals
 router.get('/withdrawals', adminController.getAllWithdrawals);

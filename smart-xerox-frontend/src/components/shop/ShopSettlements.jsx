@@ -80,37 +80,38 @@ const ShopSettlements = ({ orders = [], shopData }) => {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="bg-gradient-to-br from-gray-900 to-gray-800 p-6 rounded-xl text-white shadow-md">
           <div className="flex items-center gap-3 text-gray-300 mb-4">
-            <Wallet size={20} />
-            <span className="font-medium">Available Balance</span>
+            <Wallet size={20} className="text-emerald-400" />
+            <span className="font-medium">Direct Bank Deposits</span>
           </div>
-          <h3 className="text-4xl font-bold mb-1">₹{availableBalance.toFixed(2)}</h3>
-          <p className="text-sm text-gray-400">Next payout scheduled for tomorrow</p>
-          <button
-            onClick={() => setWithdrawModal(true)}
-            disabled={availableBalance < 1}
-            className="mt-6 w-full py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            Withdraw Funds
-          </button>
+          <h3 className="text-3xl font-bold mb-1">₹{totalEarnings.toFixed(2)}</h3>
+          <p className="text-xs text-emerald-400 mt-2 font-medium">
+            ✅ 100% deposited directly to your bank account via your Razorpay Gateway
+          </p>
+        </div>
+
+        <div className="bg-white p-6 rounded-xl border border-red-100 shadow-sm flex flex-col justify-center">
+          <div className="flex items-center gap-3 text-gray-500 mb-2">
+            <ArrowDownRight size={20} className="text-red-500" />
+            <span className="font-medium text-red-600">Commission Due to Admin</span>
+          </div>
+          <h3 className="text-3xl font-bold text-gray-900">
+            ₹{(shopData?.commissionDue !== undefined ? Number(shopData.commissionDue) : totalCommissionDue).toFixed(2)}
+          </h3>
+          <p className="text-xs text-muted-foreground mt-2">
+            Platform fees payable manually to Admin via UPI/Cash
+          </p>
         </div>
 
         <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm flex flex-col justify-center">
           <div className="flex items-center gap-3 text-gray-500 mb-2">
             <ArrowUpRight size={20} className="text-green-500" />
-            <span className="font-medium">Total Earnings (All Time)</span>
+            <span className="font-medium">Total Commission Paid</span>
           </div>
-          <h3 className="text-3xl font-bold text-gray-800">₹{totalEarnings.toFixed(2)}</h3>
-          <p className="text-sm text-green-600 font-medium mt-2">Based on {pickedUpOrders.length} completed orders</p>
-        </div>
-
-        <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm flex flex-col justify-center">
-          <div className="flex items-center gap-3 text-gray-500 mb-2">
-            <ArrowDownRight size={20} className="text-orange-500" />
-            <span className="font-medium">Platform Fee </span>
-          </div>
-          <h3 className="text-3xl font-bold text-gray-800">₹{totalCommissionDue.toFixed(2)}</h3>
-          <p className="text-xs text-muted-foreground mt-2">
-            ({appliedCommissionRate}% rate applied by Admin)
+          <h3 className="text-3xl font-bold text-gray-800">
+            ₹{Number(shopData?.commissionPaid || 0).toFixed(2)}
+          </h3>
+          <p className="text-xs text-gray-400 mt-2">
+            Historical platform settlements recorded by Admin
           </p>
         </div>
       </div>

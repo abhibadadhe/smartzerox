@@ -114,6 +114,7 @@ const orderSchema = new mongoose.Schema(
       subtotal: { type: Number, required: true },
       pageFee: { type: Number, default: 0 },
       percentCommission: { type: Number, default: 0 },
+      adminCommission: { type: Number, default: 0 }, // Admin fee/commission owed for this order (pageFee + percentCommission)
       platformMargin: { type: Number, default: 0 },
       commissionPercent: { type: Number, default: 0 }, // commission % applied at order time
       additionalServicesCharge: { type: Number, default: 0 },
@@ -138,6 +139,8 @@ const orderSchema = new mongoose.Schema(
       razorpayPaymentId: String,
       razorpaySignature: String,
       razorpayTransferId: String,
+      gatewayKeyId: String, // Which Razorpay key ID was used for checkout
+      isShopGateway: { type: Boolean, default: false }, // true if order was paid directly to shopkeeper's account
       platformCommission: { type: Number, default: 0 }, // Admin margin in paise
       shopPayout: { type: Number, default: 0 },         // Shopkeeper payout in paise
       status: { type: String, enum: ['pending', 'paid', 'failed', 'refunded'], default: 'pending' },

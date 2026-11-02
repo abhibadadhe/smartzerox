@@ -302,6 +302,7 @@ export const adminAPI = {
   setMargin:     (id, data)=> api.patch(`/admin/shops/${id}/margin`, data),
   createShopWithCredentials: (data) => api.post('/admin/shops/create-with-credentials', data),
   updateRazorpayAccount: (id, data) => api.put(`/admin/shops/${id}/razorpay-account`, data),
+  collectCommission: (id, data) => api.post(`/admin/shops/${id}/collect-commission`, data),
   getOrders:     (query)   => api.get(`/admin/orders${query ? `?${query}` : ''}`),
   broadcast:     (data)    => api.post('/admin/notifications/broadcast', data),
   // Commission settings
